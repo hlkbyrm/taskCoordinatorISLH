@@ -5,8 +5,9 @@
 #include <QObject>
 #include <QTime>
 #include <QtCore/QString>
-#include <messageDecoderISLH/taskInfo2LeaderMessage.h>
-#include <taskObserverISLH/newTaskInfoMessage.h>
+//#include <messageDecoderISLH/taskInfo2LeaderMessage.h>
+#include <messageDecoderISLH/taskInfoFromLeaderMessage.h>
+//#include <taskObserverISLH/newTaskInfoMessage.h>
 #include <taskCoordinatorISLH/cmd2LeadersMessage.h>
 
 /*
@@ -17,6 +18,25 @@ enum HandlingState
     HS_WAITING_GOAL_RESPONSE_FROM_LEADER = 2
 };
 */
+
+enum TaskStatus
+{
+    TS_NOT_ASSIGNED = 0,
+    TS_WAITING = 1,
+    TS_HANDLING = 2,
+    TS_COMPLETED = 3,
+    TS_NOT_COMPLETED = 4
+};
+
+
+enum Leader2CoordinatorInfoMgs
+{
+    INFO_L2C_INSUFFICIENT_RESOURCE = 1,
+    INFO_L2C_START_HANDLING = 2,
+    INFO_L2C_TASK_COMPLETED = 3,
+    INFO_L2C_SPLITTING = 4,
+    INFO_L2C_LEADER_CHANGED = 5
+};
 
 struct poseXY{
     double X;
@@ -77,10 +97,12 @@ private:
      QVector <taskProp> completedTasks;
      QVector <taskProp> timedoutTasks;
 
+     void manageCoalitions();
 
-     void handleTaskInfoFromLeader(taskObserverISLH::newTaskInfoMessage msg);
+     void handleTaskInfoFromLeader(messageDecoderISLH::taskInfoFromLeaderMessage infoMsg);
 
 
+     // timer for checking waitingTasks
      ros::Timer ct;
 
     // the coordinator checks waitingTasks every taskCheckingPeriod seconds

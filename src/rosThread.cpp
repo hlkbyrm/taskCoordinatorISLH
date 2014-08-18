@@ -36,32 +36,12 @@ void RosThread::work()
 
     cmd2LeadersPub = n.advertise<taskCoordinatorISLH::cmd2LeadersMessage>("taskCoordinatorISLH/cmd2Leaders",5);
 
-
- //  messageNewTaskInfo = n.subscribe("taskObserverISLH/newTaskInfo",5,&RosThread::handleNewTask, this);
-
-  //  messageTaskInfo2Leader = n.advertise<messageDecoderISLH::taskInfo2LeaderMessage>("taskHandlerISLH/taskInfo2Leader",5);
-
- /*
-    messageIn = n.subscribe("communicationISLH/messageIn",5,&RosThread::handleIncomingMessage,this);
-    messageOut = n.advertise<communicationISLH::outMessage>("messageDecoderISLH/messageOut",5);
-
-
-    messageTaskInfo2Leader = n.subscribe("taskHandlerISLH/taskInfo2Leader",5,&RosThread::sendTaskInfo2Leader,this);
-
-    messageTaskInfoFromLeader = n.advertise<messageDecoderISLH::cmdFromLeaderMessage>("messageDecoderISLH/cmdFromLeader",5);
-
-
-    messageCmd2Robots = n.subscribe("coalitionLeaderISLH/cmd2Robots",5,&RosThread::sendCmd2Robots,this);
-
-    messageRaw = n.subscribe("messageRaw",5,&RosThread::handleRawMessage,this);
-
-*/
-
     ros::Rate loop(10);
 
     while(ros::ok())
     {
 
+        manageCoalitions();
 
         ros::spinOnce();
 
@@ -80,14 +60,69 @@ void RosThread::work()
 void RosThread::shutdownROS()
 {
     ros::shutdown();
-    // shutdown = true;
-
 }
-// msg nin tipine dikkat!!!!
-//
-void RosThread::handleTaskInfoFromLeader(taskObserverISLH::newTaskInfoMessage msg)
+
+void RosThread::manageCoalitions()
 {
 
+}
+
+// handle incoming task info from a coalition leader
+void RosThread::handleTaskInfoFromLeader(messageDecoderISLH::taskInfoFromLeaderMessage infoMsg)
+{
+
+    if (infoMsg.infoTypeID == INFO_L2C_INSUFFICIENT_RESOURCE)
+    {
+
+        taskProp newTask;
+
+        newTask.encounteringRobotID = infoMsg.senderRobotID;
+
+        newTask.taskUUID = QString::fromStdString(infoMsg.taskUUID);
+
+        newTask.pose.X = infoMsg.posX;
+
+        newTask.pose.Y = infoMsg.posY;
+
+        newTask.encounteringTime = infoMsg.encounteringTime;
+
+        newTask.requiredResourcesString = QString::fromStdString(infoMsg.requiredResources);
+
+
+        QStringList resourceParts = newTask.requiredResourcesString.split(",",QString::SkipEmptyParts);
+
+        newTask.requiredResources.clear();
+
+        for(int i = 0; i < resourceParts.size();i++)
+        {
+            newTask.requiredResources.append(resourceParts.at(i).toDouble());
+        }
+
+        waitingTasks.append(newTask);
+
+    }
+    else if  (infoMsg.infoTypeID == INFO_L2C_START_HANDLING)
+    {
+
+
+/*
+        data.append("&");
+
+        data.append(QString::fromStdString(taskInfoMsg.taskUUID));
+        */
+    }
+    else if  (infoMsg.infoTypeID == INFO_L2C_TASK_COMPLETED)
+    {
+
+    }
+    else if (infoMsg.infoTypeID == INFO_L2C_SPLITTING)
+    {
+        /*
+        data.append("&");
+
+        data.append(QString::fromStdString(taskInfoMsg.extraMsg));
+        */
+    }
 
 }
 void RosThread::taskCheckingTimerCallback(const ros::TimerEvent&)
