@@ -6,9 +6,10 @@
 #include <QTime>
 #include <QtCore/QString>
 //#include <messageDecoderISLH/taskInfo2LeaderMessage.h>
-#include <messageDecoderISLH/taskInfoFromLeaderMessage.h>
+#include <ISLH_msgs/taskInfoFromLeaderMessage.h>
 //#include <taskObserverISLH/newTaskInfoMessage.h>
-#include <taskCoordinatorISLH/cmd2LeadersMessage.h>
+#include <ISLH_msgs/cmd2LeadersMessage.h>
+#include <ISLH_msgs/robotPositions.h>
 
 /*
 enum HandlingState
@@ -45,7 +46,25 @@ enum Leader2CoordinatorInfoMgs
     INFO_L2C_START_HANDLING_WITH_TASK_INFO = 3,
     INFO_L2C_TASK_COMPLETED = 4,
     INFO_L2C_SPLITTING = 5,
-    INFO_L2C_SPLITTING_AND_LEADER_CHANGED = 6
+    INFO_L2C_SPLITTING_AND_LEADER_CHANGED = 6,
+    INFO_L2C_WAITING_GOAL_POSE = 7,
+    INFO_L2C_WAITING_TASK_SITE_POSE = 8
+};
+
+enum Coordinator2LeaderCmdMsgs
+{
+    CMD_C2L_START_OR_STOP_MISSION = 0,
+    CMD_C2L_COALITION_MEMBERS = 1,
+    CMD_C2L_LEADER_CHANGE = 2,
+    CMD_C2L_NEW_GOAL_POSES = 3,
+    CMD_C2L_NEW_TASK_SITE_POSES = 4
+};
+
+struct coalValFuncParams{
+    double w1;
+    double w2;
+    double w3;
+    double ro;
 };
 
 struct poseXY{
@@ -62,8 +81,9 @@ struct robotProp{
 };
 
 struct coalProp{
-    //uint coalID;
+    //QString coalUUID;
     QVector <robotProp> coalMembers;
+    QVector <double> coalTotalResources;
     uint coalLeaderID;
     int status;
      // CS_IDLE 0 -> moving to the given goal positions while detecting tasks
@@ -110,6 +130,8 @@ private:
 
      ros::Subscriber messageTaskInfoFromLeaderSub;
 
+     ros::Subscriber messagePoseListSub;
+
      QVector <coalProp> coalList; // current coalitions
 
      QVector < QVector <coalProp> > coalListHist; // tracking the evolution of the coalitions
@@ -119,13 +141,30 @@ private:
      QVector <taskProp> completedTasks;
      QVector <taskProp> timedoutTasks;
 
+     coalValFuncParams cvfParams; // the parameters w1, w2, w3, adn ro in the coalition value function
+
 
      QVector <QVector <QVector <uint> > > generatePartitions(QVector <uint> robotList);
 
      void manageCoalitions();
 
-     void handleTaskInfoFromLeader(messageDecoderISLH::taskInfoFromLeaderMessage infoMsg);
+     void handlePoseList(ISLH_msgs::robotPositions robotPoseListMsg);
 
+     void handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage infoMsg);
+
+     void runCFG(QVector <int> wTaskIDList, QVector <int> availCoalIDList);
+
+     double calcCoalValue(QVector <robotProp> coalMmbrs, taskProp wTask);
+
+     int findCoalition(int coalID, int wTaskID, QVector <int> wTaskIDList);
+
+     void mergeCoalitions(int coalID, int mCoalID);
+
+     int findSplittedRobot(int coalID, int taskID);
+
+     void splitCoalition(int splitRobotID, int coalID);
+
+     bool readConfigFile(QString filename);
 
 
      ros::Timer ct; // timer for checking waitingTasks
@@ -136,7 +175,6 @@ private:
      int taskCheckingPeriod; // in seconds
 
      bool startChecking;
-
 
 public slots:
      void work();
