@@ -578,6 +578,8 @@ void RosThread::splitCoalition(int splitRobotID, int coalID)
 
    newCoal.coalMembers = newCoalMembers;
 
+   newCoal.currentTaskUUID = "NONE";
+
    newCoal.status = CS_WAITING_GOAL_POSE;
 
 
