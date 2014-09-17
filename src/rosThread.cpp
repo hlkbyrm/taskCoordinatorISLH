@@ -1343,29 +1343,68 @@ bool RosThread::readConfigFile(QString filename)
 
         double radiusTmp = result["robotRadius"].toDouble();
 
-        // initialize  robotsList
-        for(int robID = 0; robID < missionParams.numOfRobots;robID++)
+
+        QString resourceStr = result["resources"].toString();
+        QStringList resourceStrList = resourceStr.split(",",QString::SkipEmptyParts);
+        QVector <double> resources;
+        for(int i = 0; i < resourceStrList.size();i++)
         {
-            robotProp robotTmp;
-
-            robotTmp.coalID = robID;
-            robotTmp.robotID = robID + 1;
-            robotTmp.inGoalPose = -1;
-            robotTmp.inTaskSite = -1;
-
-            robotTmp.pose.X = -1;
-            robotTmp.pose.Y = -1;
-
-            robotTmp.goalPose.X = -1;
-            robotTmp.goalPose.Y = -1;
-
-            robotTmp.taskSitePose.X = -1;
-            robotTmp.taskSitePose.Y = -1;
+           resources.append(resourceStrList.at(i).toDouble());
+        }
+        int ownRobotID = result["robotID"].toInt();
 
 
-            robotTmp.radius = radiusTmp;
+        // initialize  robotsList
+        robotProp robotTmp;
 
-            robotsList.append(robotTmp);
+        robotTmp.coalID = ownRobotID-1;
+        robotTmp.robotID = ownRobotID;
+        robotTmp.inGoalPose = -1;
+        robotTmp.inTaskSite = -1;
+        robotTmp.pose.X = -1;
+        robotTmp.pose.Y = -1;
+        robotTmp.goalPose.X = -1;
+        robotTmp.goalPose.Y = -1;
+        robotTmp.taskSitePose.X = -1;
+        robotTmp.taskSitePose.Y = -1;
+        robotTmp.radius = radiusTmp;
+        robotTmp.resources = resources;
+
+        robotsList.resize(missionParams.numOfRobots);
+
+        robotsList[ownRobotID-1] = robotTmp;
+
+        QVariantMap nestedMap = result["Robots"].toMap();
+        foreach (QVariant plugin, nestedMap["Robot"].toList()) {
+            QString rNameStr = plugin.toMap()["name"].toString();
+            rNameStr.remove("IRobot");
+            int rID = rNameStr.toInt();
+
+            QString resourceStr =  plugin.toMap()["resources"].toString();
+            QStringList resourceStrList = resourceStr.split(",",QString::SkipEmptyParts);
+            QVector <double> resources;
+            for(int i = 0; i < resourceStrList.size();i++)
+               resources.append(resourceStrList.at(i).toDouble());
+
+            robotTmp.coalID = rID-1;
+            robotTmp.robotID = rID;
+            robotTmp.resources = resources;
+
+            robotsList[rID-1] = robotTmp;
+        }
+
+        //initialize the singleton coalitions
+        for(int robID = 0; robID < robotsList.size();robID++)
+        {
+            coalProp newCoal;
+
+            newCoal.coalLeaderID = robID+1;
+            newCoal.coalMembers.append(robotsList.at(robID));
+            newCoal.status = CS_WAITING_GOAL_POSE;
+            newCoal.coalTotalResources = robotsList.at(robID).resources;
+            newCoal.currentTaskUUID = "NONE";
+
+            coalList.append(newCoal);
         }
 
 
