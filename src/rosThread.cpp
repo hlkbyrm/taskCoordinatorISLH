@@ -1156,6 +1156,9 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
     std::time_t sendingTime = std::time(0);
     msg.sendingTime = sendingTime;
 
+
+    QString targetPosesStr;
+
     for(int cIndx=0; cIndx < coalIDList.size(); cIndx++)
     {
         int coalID = coalIDList.at(cIndx);
@@ -1182,6 +1185,8 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
                     msgStr.append(";");
             }
 
+            if (msgStr.size() != 0)
+                targetPosesStr.append(msgStr).append(";");
         }
         else if (cmdType == CMD_C2L_START_OR_STOP_MISSION)
         {
@@ -1199,6 +1204,18 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
 
     }
 
+
+    if(targetPosesStr.size() != 0){
+        targetPosesStr.remove(targetPosesStr.size()-1,1);
+        for(int cIndx=0; cIndx < coalList.size(); cIndx++)
+        {
+            msg.messageTypeID.push_back(CMD_C2L_NEW_ALL_TARGET_POSES);
+
+            msg.leaderRobotID.push_back(coalList.at(cIndx).coalLeaderID);
+
+            msg.message.push_back(targetPosesStr.toStdString());
+        }
+    }
 
     cmd2LeadersPub.publish(msg);
 
@@ -1406,8 +1423,6 @@ bool RosThread::readConfigFile(QString filename)
 
             coalList.append(newCoal);
         }
-
-
 
     }
 

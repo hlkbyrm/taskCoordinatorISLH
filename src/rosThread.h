@@ -54,7 +54,8 @@ enum Coordinator2LeaderCmdMsgs
     CMD_C2L_COALITION_MEMBERS = 1,
     CMD_C2L_LEADER_CHANGE = 2,
     CMD_C2L_NEW_GOAL_POSES = 3,
-    CMD_C2L_NEW_TASK_SITE_POSES = 4
+    CMD_C2L_NEW_TASK_SITE_POSES = 4,
+    CMD_C2L_NEW_ALL_TARGET_POSES = 5
 };
 
 struct coalValFuncParameters{
