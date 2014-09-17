@@ -10,6 +10,8 @@ RosThread::RosThread()
 {
     shutdown = false;
 
+    missionParams.startMission = false;
+
     missionParams.taskCheckingPeriod = 10; //in seconds
 
     startChecking = false;
@@ -52,7 +54,10 @@ void RosThread::work()
 
     messagePoseListSub = n.subscribe("localizationISLH/poseList",5,&RosThread::handlePoseList, this);
 
+    messageStartMissionSub = n.subscribe("monitoringISLH/startMission", 5,&RosThread::handleStartMission, this);
+
     cmd2LeadersPub = n.advertise<ISLH_msgs::cmd2LeadersMessage>("taskCoordinatorISLH/cmd2Leaders",5);
+
 
 /*
     QVector <uint> robotList;
@@ -149,11 +154,14 @@ void RosThread::work()
     while(ros::ok())
     {
 
-        if (startChecking)
+        if (missionParams.startMission)
         {
-            manageCoalitions();
+            if (startChecking)
+            {
+                manageCoalitions();
 
-            startChecking = false;
+                startChecking = false;
+            }
         }
 
         ros::spinOnce();
@@ -173,6 +181,26 @@ void RosThread::work()
 void RosThread::shutdownROS()
 {
     ros::shutdown();
+}
+
+void RosThread::handleStartMission(std_msgs::UInt8 msg)
+{
+    if (msg.data == 1)
+    {
+        missionParams.startMission = true;
+        ct.start();
+    }
+    else
+    {
+        missionParams.startMission = false;
+        ct.stop();
+    }
+
+    QVector <int> coalIDList;
+    for(int coalID=0; coalID < coalList.size(); coalID++)
+        coalIDList.append(coalID);
+
+    sendCmd2Leaders(CMD_C2L_START_OR_STOP_MISSION, coalIDList);
 }
 
 void RosThread::manageCoalitions()
@@ -1010,8 +1038,8 @@ void RosThread::generatePoses(int coalID, int poseType)
                 double robY = -(rand()%(2*missionParams.ro)) + missionParams.ro;
                 */
 
-                double robX = ((rand()/(double) (RAND_MAX + 1)) * (2*missionParams.ro)) - missionParams.ro;
-                double robY = ((rand()/(double) (RAND_MAX + 1)) * (2*missionParams.ro)) - missionParams.ro;
+                double robX = ((rand()/ (RAND_MAX + 1.0)) * (2*missionParams.ro)) - missionParams.ro;
+                double robY = ((rand()/ (RAND_MAX + 1.0)) * (2*missionParams.ro)) - missionParams.ro;
 
 
                 if (sqrt(robX*robX + robY*robY) <= (missionParams.ro-robotRadius))
@@ -1136,10 +1164,10 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
 
         msg.messageTypeID.push_back(cmdType);
 
+        QString msgStr;
         if (cmdType == CMD_C2L_NEW_GOAL_POSES)
         {
             // msgStr = robotID1,posex1,posey1;robotID2,posex2,posey2;...;robotIDn,posexn,poseyn
-            QString msgStr;
 
             int numOfMem = coalList.at(coalID).coalMembers.size();
             for(int robIndx=0; robIndx < numOfMem; robIndx++)
@@ -1154,8 +1182,21 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
                     msgStr.append(";");
             }
 
-            msg.message.push_back(msgStr.toStdString());
         }
+        else if (cmdType == CMD_C2L_START_OR_STOP_MISSION)
+        {
+            if (missionParams.startMission == true)
+            {
+                msgStr = "START-MISSION";
+            }
+            else
+            {
+                msgStr = "STOP-MISSION";
+            }
+        }
+
+        msg.message.push_back(msgStr.toStdString());
+
     }
 
 

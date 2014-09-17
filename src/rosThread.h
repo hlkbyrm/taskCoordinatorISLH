@@ -9,6 +9,7 @@
 #include <ISLH_msgs/taskInfoFromLeaderMessage.h>
 #include <ISLH_msgs/cmd2LeadersMessage.h>
 #include <ISLH_msgs/robotPositions.h>
+#include "std_msgs/UInt8.h"
 
 enum PoseType
 {
@@ -63,6 +64,7 @@ struct coalValFuncParameters{
 };
 
 struct missionParameters{
+    bool startMission;
     int numOfRobots;
     int taskCheckingPeriod; // in seconds
     double taskSiteRadius;
@@ -139,6 +141,8 @@ private:
 
      ros::Subscriber messagePoseListSub;
 
+     ros::Subscriber messageStartMissionSub;
+
      QVector <coalProp> coalList; // current coalitions
      QVector <coalProp> _coalList;
 
@@ -157,6 +161,8 @@ private:
      missionParameters missionParams;
 
      QVector <QVector <QVector <uint> > > generatePartitions(QVector <uint> robotList);
+
+     void handleStartMission(std_msgs::UInt8 msg);
 
      void manageCoalitions();
 
