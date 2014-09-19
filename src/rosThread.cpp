@@ -154,13 +154,16 @@ void RosThread::work()
     while(ros::ok())
     {
 
-        if (missionParams.startMission)
+        if (coordinatorRobotID == ownRobotID)
         {
-            if (startChecking)
+            if (missionParams.startMission)
             {
-                manageCoalitions();
+                if (startChecking)
+                {
+                    manageCoalitions();
 
-                startChecking = false;
+                    startChecking = false;
+                }
             }
         }
 
@@ -1358,6 +1361,9 @@ bool RosThread::readConfigFile(QString filename)
         missionParams.taskSiteRadius = result["taskSiteRadius"].toDouble();
         qDebug()<< " taskSiteRadius " << missionParams.taskSiteRadius;
 
+        coordinatorRobotID = result["taskCoordinatorRobotID"].toInt();
+        qDebug()<< " coordinatorRobotID " << coordinatorRobotID;
+
         double radiusTmp = result["robotRadius"].toDouble();
 
 
@@ -1368,7 +1374,7 @@ bool RosThread::readConfigFile(QString filename)
         {
            resources.append(resourceStrList.at(i).toDouble());
         }
-        int ownRobotID = result["robotID"].toInt();
+        ownRobotID = result["robotID"].toInt();
 
 
         // initialize  robotsList

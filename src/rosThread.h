@@ -96,30 +96,30 @@ struct coalProp{
     QVector <double> coalTotalResources;
     uint coalLeaderID;
     int status;
-     // CS_IDLE 0 -> moving to the given goal positions while detecting tasks
-     // CS_WAITING_TASK_RESPONSE_FROM_COORDINATOR 1 -> waiting for help
-     // CS_SUCCORING 2 -> waiting for the robots to reach to their goal positions in the coalition
-     // CS_HANDLING 3 -> handling a task
-     // CS_WAITING_GOAL_POSE 4 -> waiting for new goal positions
+    // CS_IDLE 0 -> moving to the given goal positions while detecting tasks
+    // CS_WAITING_TASK_RESPONSE_FROM_COORDINATOR 1 -> waiting for help
+    // CS_SUCCORING 2 -> waiting for the robots to reach to their goal positions in the coalition
+    // CS_HANDLING 3 -> handling a task
+    // CS_WAITING_GOAL_POSE 4 -> waiting for new goal positions
     QString currentTaskUUID; // the taskUUID if the coalition has a task
 };
 
 // task properties
 struct taskProp{
-  QString taskUUID;
-  uint encounteringTime; // in timestamp - "the time when the task is encountered"
-  int responsibleUnit;  // "who is responsible for the task"
-  uint encounteringRobotID;  // "Id of the robot encountering the task"
-  uint handlingDuration; // in seconds - "the required time to handle the task"
-  uint timedOutDuration; // "the timed-out duration for the task"
-  int status; // "status of the task"
-              //
-  uint startHandlingTime; // in timestamp - "the time when the task starts being handled"
-  poseXY pose; // the location of the task
-  QVector < double > requiredResources;
-  QString requiredResourcesString;
+    QString taskUUID;
+    uint encounteringTime; // in timestamp - "the time when the task is encountered"
+    int responsibleUnit;  // "who is responsible for the task"
+    uint encounteringRobotID;  // "Id of the robot encountering the task"
+    uint handlingDuration; // in seconds - "the required time to handle the task"
+    uint timedOutDuration; // "the timed-out duration for the task"
+    int status; // "status of the task"
+    //
+    uint startHandlingTime; // in timestamp - "the time when the task starts being handled"
+    poseXY pose; // the location of the task
+    QVector < double > requiredResources;
+    QString requiredResourcesString;
 
-  coalProp engagedCoalition; // the coalition is handling this task
+    coalProp engagedCoalition; // the coalition is handling this task
 };
 
 class RosThread:public QObject
@@ -132,80 +132,85 @@ public:
 
 
 private:
-     bool shutdown;
 
-     ros::NodeHandle n;
+    int ownRobotID;
 
-     ros::Publisher cmd2LeadersPub;
+    int coordinatorRobotID;
 
-     ros::Subscriber messageTaskInfoFromLeaderSub;
+    bool shutdown;
 
-     ros::Subscriber messagePoseListSub;
+    ros::NodeHandle n;
 
-     ros::Subscriber messageStartMissionSub;
+    ros::Publisher cmd2LeadersPub;
 
-     QVector <coalProp> coalList; // current coalitions
-     QVector <coalProp> _coalList;
+    ros::Subscriber messageTaskInfoFromLeaderSub;
 
-     QVector < QVector <coalProp> > coalListHist; // tracking the evolution of the coalitions
+    ros::Subscriber messagePoseListSub;
 
-     QVector <robotProp> robotsList; // denoting both robots' position and which robot belongs to which coalition in the current coalition structure
+    ros::Subscriber messageStartMissionSub;
 
-     QVector <taskProp> handlingTasks;
-     QVector <taskProp> waitingTasks;
-     QVector <taskProp> _waitingTasks;
-     QVector <taskProp> completedTasks;
-     QVector <taskProp> timedoutTasks;
+    QVector <coalProp> coalList; // current coalitions
+    QVector <coalProp> _coalList;
 
-     coalValFuncParameters cvfParams; // the parameters w1, w2, w3, adn ro in the coalition value function
+    QVector < QVector <coalProp> > coalListHist; // tracking the evolution of the coalitions
 
-     missionParameters missionParams;
+    QVector <robotProp> robotsList; // denoting both robots' position and which robot belongs to which coalition in the current coalition structure
 
-     QVector <QVector <QVector <uint> > > generatePartitions(QVector <uint> robotList);
+    QVector <taskProp> handlingTasks;
+    QVector <taskProp> waitingTasks;
+    QVector <taskProp> _waitingTasks;
+    QVector <taskProp> completedTasks;
+    QVector <taskProp> timedoutTasks;
 
-     void handleStartMission(std_msgs::UInt8 msg);
+    coalValFuncParameters cvfParams; // the parameters w1, w2, w3, adn ro in the coalition value function
 
-     void manageCoalitions();
+    missionParameters missionParams;
 
-     void sendCmd2Leaders(int cmdType, QVector <int> coalIDList);
+    QVector <QVector <QVector <uint> > > generatePartitions(QVector <uint> robotList);
 
-     void handlePoseList(ISLH_msgs::robotPositions robotPoseListMsg);
+    void handleStartMission(std_msgs::UInt8 msg);
 
-     void handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage infoMsg);
+    void manageCoalitions();
 
-     void runCFG(QVector <int> wTaskIDList);//, QVector <int> availCoalIDList);
+    void sendCmd2Leaders(int cmdType, QVector <int> coalIDList);
 
-     double calcCoalValue(QVector <robotProp> coalMmbrs, taskProp wTask);
+    void handlePoseList(ISLH_msgs::robotPositions robotPoseListMsg);
 
-     int findCoalition(int coalID, int wTaskID, QVector <int> wTaskIDList);
+    void handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage infoMsg);
 
-     void mergeCoalitions(int coalID, int mCoalID);
+    void runCFG(QVector <int> wTaskIDList);//, QVector <int> availCoalIDList);
 
-     int findSplittedRobot(int coalID, int taskID);
+    double calcCoalValue(QVector <robotProp> coalMmbrs, taskProp wTask);
 
-     void splitCoalition(int splitRobotID, int coalID);
+    int findCoalition(int coalID, int wTaskID, QVector <int> wTaskIDList);
 
-     void generatePoses(int coalID, int poseType);
+    void mergeCoalitions(int coalID, int mCoalID);
 
-     bool readConfigFile(QString filename);
+    int findSplittedRobot(int coalID, int taskID);
+
+    void splitCoalition(int splitRobotID, int coalID);
+
+    void generatePoses(int coalID, int poseType);
+
+    bool readConfigFile(QString filename);
 
 
-     ros::Timer ct; // timer for checking waitingTasks
+    ros::Timer ct; // timer for checking waitingTasks
 
     // the coordinator checks waitingTasks every taskCheckingPeriod seconds
-     void taskCheckingTimerCallback(const ros::TimerEvent&);
+    void taskCheckingTimerCallback(const ros::TimerEvent&);
 
-     bool startChecking;
+    bool startChecking;
 
 public slots:
-     void work();
+    void work();
 
-     void shutdownROS();
+    void shutdownROS();
 
 
 signals:
-   void rosFinished();
-   void rosStarted();
-   void rosStartFailed();
+    void rosFinished();
+    void rosStarted();
+    void rosStartFailed();
 
 };
