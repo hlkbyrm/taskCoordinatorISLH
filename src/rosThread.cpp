@@ -50,7 +50,7 @@ void RosThread::work()
     ct.stop();
 
 
-    messageTaskInfoFromLeaderSub = n.subscribe("messageDecoder/taskInfoFromLeader",5,&RosThread::handleTaskInfoFromLeader, this);
+    messageTaskInfoFromLeaderSub = n.subscribe("messageDecoderISLH/taskInfoFromLeader",5,&RosThread::handleTaskInfoFromLeader, this);
 
     messagePoseListSub = n.subscribe("localizationISLH/poseList",5,&RosThread::handlePoseList, this);
 
@@ -188,22 +188,25 @@ void RosThread::shutdownROS()
 
 void RosThread::handleStartMission(std_msgs::UInt8 msg)
 {
-    if (msg.data == 1)
+    if (coordinatorRobotID == ownRobotID)
     {
-        missionParams.startMission = true;
-        ct.start();
-    }
-    else
-    {
-        missionParams.startMission = false;
-        ct.stop();
-    }
+        if (msg.data == 1)
+        {
+            missionParams.startMission = true;
+            ct.start();
+        }
+        else
+        {
+            missionParams.startMission = false;
+            ct.stop();
+        }
 
-    QVector <int> coalIDList;
-    for(int coalID=0; coalID < coalList.size(); coalID++)
-        coalIDList.append(coalID);
+        QVector <int> coalIDList;
+        for(int coalID=0; coalID < coalList.size(); coalID++)
+            coalIDList.append(coalID);
 
-    sendCmd2Leaders(CMD_C2L_START_OR_STOP_MISSION, coalIDList);
+        sendCmd2Leaders(CMD_C2L_START_OR_STOP_MISSION, coalIDList);
+    }
 }
 
 void RosThread::manageCoalitions()
@@ -980,34 +983,28 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
     }
     else if (infoMsg.infoTypeID == INFO_L2C_WAITING_GOAL_POSE)
     {
-        if (infoMsg.extraMsg == "GOALPOSE")
+
+        int leaderRobotID = infoMsg.senderRobotID;
+        qDebug()<< "goal pose request from robot " << leaderRobotID;
+
+        int coalID = -1;
+
+        for(int cid = 0; cid < coalList.size();cid++)
         {
-            int leaderRobotID = infoMsg.senderRobotID;
-            qDebug()<< "goal pose request from robot " << leaderRobotID;
-
-            int coalID = -1;
-
-            for(int cid = 0; cid < coalList.size();cid++)
+            if (coalList.at(cid).coalLeaderID == leaderRobotID)
             {
-                if (coalList.at(cid).coalLeaderID == leaderRobotID)
-                {
-                    coalID = cid;
-                    break;
-                }
+                coalID = cid;
+                break;
             }
-
-            if (coalID==-1)
-                qDebug()<< "robot "<<leaderRobotID << " is not a coalition leader !!! ";
-
-            generatePoses(coalID, GOAL_POSE);
-
-            sendCmd2Leaders(CMD_C2L_NEW_GOAL_POSES, QVector <int>(coalID));
-
         }
-        else
-        {
-             qDebug()<< "goal pose request: but extraMsg is not coherent";
-        }
+
+        if (coalID==-1)
+            qDebug()<< "robot "<<leaderRobotID << " is not a coalition leader !!! ";
+
+        generatePoses(coalID, GOAL_POSE);
+
+        sendCmd2Leaders(CMD_C2L_NEW_GOAL_POSES, QVector <int>(coalID));
+
     }
 
 }
