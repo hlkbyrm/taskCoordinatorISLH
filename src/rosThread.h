@@ -111,7 +111,7 @@ struct taskProp{
     int responsibleUnit;  // "who is responsible for the task"
     uint encounteringRobotID;  // "Id of the robot encountering the task"
     uint handlingDuration; // in seconds - "the required time to handle the task"
-    uint timedOutDuration; // "the timed-out duration for the task"
+    uint timeOutDuration; // "the timed-out duration for the task"
     int status; // "status of the task"
     //
     uint startHandlingTime; // in timestamp - "the time when the task starts being handled"
@@ -138,6 +138,8 @@ private:
     int coordinatorRobotID;
 
     bool shutdown;
+
+    double distThreshold4GeneratingPoses;
 
     ros::NodeHandle n;
 
@@ -189,6 +191,8 @@ private:
     int findSplittedRobot(int coalID, int taskID);
 
     void splitCoalition(int splitRobotID, int coalID);
+
+    QVector <double> calcCoalTotalResources(QVector <robotProp> coalMembers);
 
     void generatePoses(int coalID, int poseType);
 
