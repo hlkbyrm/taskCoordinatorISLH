@@ -62,6 +62,9 @@ void RosThread::work()
 
     cmd2LeadersPub = n.advertise<ISLH_msgs::cmd2LeadersMessage>("taskCoordinatorISLH/cmd2Leaders",5);
 
+    leaderIDInfo2MonitorPub = n.advertise<std_msgs::Int8MultiArray>("taskCoordinatorISLH/leaderIDInfo2Monitor",5);
+
+    taskInfo2MonitorPub =  n.advertise<ISLH_msgs::taskInfo2MonitorMessage>("taskCoordinatorISLH/taskInfo2Monitor",5);
 
 /*
     QVector <uint> robotList;
@@ -902,7 +905,7 @@ void RosThread::handlePoseList(ISLH_msgs::robotPositions robotPoseListMsg)
 void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage infoMsg)
 {
 
-    if (infoMsg.infoTypeID == INFO_L2C_INSUFFICIENT_RESOURCE)
+    if ( (infoMsg.infoTypeID == INFO_L2C_INSUFFICIENT_RESOURCE) || (infoMsg.infoTypeID == INFO_L2C_WAITING_TASK_SITE_POSE) )
     {
         taskProp newTask;
 
@@ -918,6 +921,7 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
 
         newTask.requiredResourcesString = QString::fromStdString(infoMsg.requiredResources);
 
+        newTask.status = TS_NOT_ASSIGNED;
 
         QStringList resourceParts = newTask.requiredResourcesString.split(",",QString::SkipEmptyParts);
 
@@ -928,18 +932,49 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
             newTask.requiredResources.append(resourceParts.at(i).toDouble());
         }
 
-        waitingTasks.append(newTask);
-
-        for(int i = 0; i < coalList.size();i++)
+        if ( infoMsg.infoTypeID == INFO_L2C_INSUFFICIENT_RESOURCE )
         {
-            if (coalList.at(i).coalLeaderID == infoMsg.senderRobotID)
-            {
-                coalList[i].status = CS_WAITING_TASK_RESPONSE_FROM_COORDINATOR;
-                coalList[i].currentTaskUUID = QString::fromStdString(infoMsg.taskUUID);
+            waitingTasks.append(newTask);
 
-                break;
+            for(int i = 0; i < coalList.size();i++)
+            {
+                if (coalList.at(i).coalLeaderID == infoMsg.senderRobotID)
+                {
+                    coalList[i].status = CS_WAITING_TASK_RESPONSE_FROM_COORDINATOR;
+                    coalList[i].currentTaskUUID = QString::fromStdString(infoMsg.taskUUID);
+
+                    break;
+                }
             }
         }
+        else // INFO_L2C_WAITING_TASK_SITE_POSE
+        {
+            newTask.status = TS_WAITING;
+            newTask.responsibleUnit = infoMsg.senderRobotID;
+
+            waitingTasks.append(newTask);
+
+            for(int i = 0; i < coalList.size();i++)
+            {
+                if (coalList.at(i).coalLeaderID == infoMsg.senderRobotID)
+                {
+                    generatePoses(i, TASK_SITE_POSE);
+
+                    QVector <int> coalIDListTmp;
+                    coalIDListTmp.append(i);
+
+                    sendCmd2Leaders(CMD_C2L_NEW_TASK_SITE_POSES, coalIDListTmp);
+
+                    coalList[i].status = CS_SUCCORING;
+                    coalList[i].currentTaskUUID = QString::fromStdString(infoMsg.taskUUID);
+
+                    break;
+                }
+            }
+
+        }
+
+        pubTaskInfo2Monitor(taskProp(newTask));
 
     }
     else if  (infoMsg.infoTypeID == INFO_L2C_START_HANDLING_WITH_TASK_INFO)
@@ -969,53 +1004,101 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
             newTask.requiredResources.append(resourceParts.at(i).toDouble());
         }
 
-        handlingTasks.append(newTask);
-
+        int numOfMem = -1;
+        int coalID = -1;
         for(int i = 0; i < coalList.size();i++)
         {
             if (coalList.at(i).coalLeaderID == infoMsg.senderRobotID)
             {
-                coalList[i].status = CS_HANDLING;
-                coalList[i].currentTaskUUID = QString::fromStdString(infoMsg.taskUUID);
-
-                ISLH_msgs::cmd2LeadersMessage msg;
-
-                std::time_t sendingTime = std::time(0);
-                msg.sendingTime = sendingTime;
-
-                QString msgStr;
-                int numOfMem = coalList.at(i).coalMembers.size();
-                for(int robIndx=0; robIndx < numOfMem; robIndx++)
-                {
-                    msgStr.append(QString::number(coalList.at(i).coalMembers.at(robIndx).robotID));
-                    msgStr.append(",");
-                    msgStr.append(QString::number(robotsList[coalList.at(i).coalMembers.at(robIndx).robotID-1].pose.X));
-                    msgStr.append(",");
-                    msgStr.append(QString::number(robotsList[coalList.at(i).coalMembers.at(robIndx).robotID-1].pose.Y));
-
-                    if (robIndx<(numOfMem-1))
-                        msgStr.append(";");
-
-                    for(int cIndx=0; cIndx < coalList.size(); cIndx++)
-                    {
-                        msg.messageTypeID.push_back(CMD_C2L_NEW_ALL_TARGET_POSES);
-
-                        msg.leaderRobotID.push_back(coalList.at(cIndx).coalLeaderID);
-
-                        msg.message.push_back(msgStr.toStdString());
-                    }
-
-                    cmd2LeadersPub.publish(msg);
-                }
-
+                coalID = i;
+                numOfMem = coalList.at(i).coalMembers.size();
                 break;
             }
+        }
+        newTask.taskSiteRadius = missionParams.targetSiteRadius*numOfMem;
+
+        newTask.status = TS_HANDLING;
+
+        handlingTasks.append(newTask);
+
+        pubTaskInfo2Monitor(taskProp(newTask));
+
+        if (coalID > -1)
+        {
+            /*
+        for(int i = 0; i < coalList.size();i++)
+        {
+            if (coalList.at(i).coalLeaderID == infoMsg.senderRobotID)
+            {
+                */
+            coalList[coalID].status = CS_HANDLING;
+            coalList[coalID].currentTaskUUID = QString::fromStdString(infoMsg.taskUUID);
+
+            ISLH_msgs::cmd2LeadersMessage msg;
+
+            std::time_t sendingTime = std::time(0);
+            msg.sendingTime = sendingTime;
+
+            QString msgStr;
+            int numOfMem = coalList.at(coalID).coalMembers.size();
+            for(int robIndx=0; robIndx < numOfMem; robIndx++)
+            {
+                msgStr.append(QString::number(coalList.at(coalID).coalMembers.at(robIndx).robotID));
+                msgStr.append(",");
+                msgStr.append(QString::number(robotsList[coalList.at(coalID).coalMembers.at(robIndx).robotID-1].pose.X));
+                msgStr.append(",");
+                msgStr.append(QString::number(robotsList[coalList.at(coalID).coalMembers.at(robIndx).robotID-1].pose.Y));
+
+                if (robIndx<(numOfMem-1))
+                    msgStr.append(";");
+            }
+
+            for(int cIndx=0; cIndx < coalList.size(); cIndx++)
+            {
+                msg.messageTypeID.push_back(CMD_C2L_NEW_ALL_TARGET_POSES);
+
+                msg.leaderRobotID.push_back(coalList.at(cIndx).coalLeaderID);
+
+                msg.message.push_back(msgStr.toStdString());
+            }
+
+            cmd2LeadersPub.publish(msg);
+
+
+            //break;
+            //}
+            //    }
+        }
+        else
+        {
+            qDebug()<<"Error: handleTaskInfoFromLeader:INFO_L2C_START_HANDLING_WITH_TASK_INFO: coalID is not available in the coordinator";
         }
     }
     else if  (infoMsg.infoTypeID == INFO_L2C_START_HANDLING)
     {
         qDebug() << "start handling w/o info" << infoMsg.senderRobotID;
 
+        QString taskUUIDTmp = QString::fromStdString(infoMsg.taskUUID);
+
+        for(int i = 0; i < waitingTasks.size();i++)
+        {
+            if (QString::compare(waitingTasks.at(i).taskUUID, taskUUIDTmp,Qt::CaseInsensitive) == 0)
+            {
+                waitingTasks[i].startHandlingTime = infoMsg.startHandlingTime;
+                waitingTasks[i].responsibleUnit = infoMsg.senderRobotID;
+                waitingTasks[i].status = TS_HANDLING;
+
+                pubTaskInfo2Monitor(taskProp(waitingTasks.at(i)));
+
+                handlingTasks.append(waitingTasks.at(i));
+
+                waitingTasks.remove(i);
+
+                break;
+            }
+        }
+
+/*
         for(int i = 0; i < coalList.size();i++)
         {
             if (coalList.at(i).coalLeaderID == infoMsg.senderRobotID)
@@ -1049,11 +1132,10 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
 
                     cmd2LeadersPub.publish(msg);
                 }
-
-
                 break;
             }
         }
+        */
 
     }
     else if  (infoMsg.infoTypeID == INFO_L2C_TASK_COMPLETED)
@@ -1074,6 +1156,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
                         break;
                     }
                 }
+
+                pubTaskInfo2Monitor(taskProp(handlingTasks.at(i)));
 
                 completedTasks.append(handlingTasks.at(i));
 
@@ -1176,125 +1260,319 @@ void RosThread::generatePoses(int coalID, int poseType)
     {
         int numOfMem = coalList.at(coalID).coalMembers.size();
 
-        for(int robIndx=0; robIndx < numOfMem; robIndx++)
-        {
-            int robotID = coalList.at(coalID).coalMembers.at(robIndx).robotID;
+        while(true){
+            bool isAllDone = true;
+            int radiusIncreaseCounter = 0;
+            double goalX;
+            double goalY;
+            goalX = ((rand()/ (RAND_MAX + 1.0)) * (2*missionParams.ro)) - missionParams.ro;
+            goalY = ((rand()/ (RAND_MAX + 1.0)) * (2*missionParams.ro)) - missionParams.ro;
 
-            double robotRadius = coalList.at(coalID).coalMembers.at(robIndx).radius;
-
-            int poseOK = 0;
-            while(poseOK==0)
+            for(int goalSiteRadius = missionParams.targetSiteRadius * numOfMem;true;goalSiteRadius += 10)
             {
-                /*
-                double robX = -(rand()%(2*missionParams.ro)) + missionParams.ro;
-                double robY = -(rand()%(2*missionParams.ro)) + missionParams.ro;
-                */
-
-                double robX = ((rand()/ (RAND_MAX + 1.0)) * (2*missionParams.ro)) - missionParams.ro;
-                double robY = ((rand()/ (RAND_MAX + 1.0)) * (2*missionParams.ro)) - missionParams.ro;
-
-
-                if (sqrt(robX*robX + robY*robY) <= (missionParams.ro-robotRadius))
-                {
-                    int distOK = 1;
-
-                    // check dist btw xy & other robots' pose
-                    for(int robIndx2=0; robIndx2 < robotsList.size(); robIndx2++)
-                    {
-                        if ( (robotsList.at(robIndx2).robotID !=robotID) && (robotsList.at(robIndx2).coalID != coalID) )
-                        {
-                            if (robotsList.at(robIndx2).inGoalPose != -1)
-                                // robIndx2 has an assigned goal pose?
-                            {
-                                double xTmp = robotsList.at(robIndx2).goalPose.X;
-                                double yTmp = robotsList.at(robIndx2).goalPose.Y;
-
-                                double robotRadius2 = robotsList.at(robIndx2).radius;
-
-                                if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + robotRadius2 + distThreshold4GeneratingPoses) )
-                                {
-                                    distOK = 0;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    // check dist btw xy & its coalition members' pose
-                    if (distOK == 1)
-                    {
-                        for(int robIndx2=0; robIndx2 < robIndx; robIndx2++)
-                        {
-                            if (robotsList.at(robIndx2).inGoalPose != -1)
-                                // robIndx2 has an assigned goal pose?
-                            {
-                                double xTmp = coalList.at(coalID).coalMembers.at(robIndx2).goalPose.X;
-                                double yTmp = coalList.at(coalID).coalMembers.at(robIndx2).goalPose.Y;
-
-                                double robotRadius2 = coalList.at(coalID).coalMembers.at(robIndx2).radius;
-
-                                if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + robotRadius2 + distThreshold4GeneratingPoses) )
-                                {
-                                    distOK = 0;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-
-                    // check dist btw xy & tasks' site pose
-                    if (distOK == 1)
-                    {
-                        for(int wTID = 0; wTID < waitingTasks.size();wTID++)
-                        {
-                            double xTmp = waitingTasks.at(wTID).pose.X;
-                            double yTmp = waitingTasks.at(wTID).pose.Y;
-
-                            if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + missionParams.taskSiteRadius) )
-                            {
-                                distOK = 0;
-                                break;
-                            }
-                        }
-
-                        if (distOK == 1)
-                        {
-                            for(int hTID = 0; hTID < handlingTasks.size();hTID++)
-                            {
-                                double xTmp = handlingTasks.at(hTID).pose.X;
-                                double yTmp = handlingTasks.at(hTID).pose.Y;
-
-                                if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + missionParams.taskSiteRadius) )
-                                {
-                                    distOK = 0;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-
-                    if (distOK == 1)
-                    {
-                        robotsList[robotID-1].goalPose.X = robX;
-                        robotsList[robotID-1].goalPose.Y = robY;
-
-                        coalList[coalID].coalMembers[robIndx].goalPose.X = robX;
-                        coalList[coalID].coalMembers[robIndx].goalPose.Y = robY;
-
-                        poseOK = 1;
-                    }
+                if(++radiusIncreaseCounter > 10){
+                    isAllDone = false;
+                    break;
                 }
+                bool done = true;
+                int counter = 0;
+                for(int robIndx=0; robIndx < numOfMem; robIndx++)
+                {
+                    int robotID = coalList.at(coalID).coalMembers.at(robIndx).robotID;
 
-            } // end of while(poseOK==0)
+                    double robotRadius = coalList.at(coalID).coalMembers.at(robIndx).radius;
+                    double robX,robY;
+                    bool doneInside = true;
+
+                    int poseOK = 0;
+                    while(poseOK==0)
+                    {
+                        if((++counter % 100) == 0){
+                            doneInside = false;
+                            break;
+                        }
+                        robX = goalX + ((rand()/ (RAND_MAX + 1.0)) * (2*goalSiteRadius)) - goalSiteRadius;
+                        robY = goalY + ((rand()/ (RAND_MAX + 1.0)) * (2*goalSiteRadius)) - goalSiteRadius;
+
+                        if (sqrt(robX*robX + robY*robY) <= (missionParams.ro-robotRadius))
+                        {
+                            int distOK = 1;
+
+                            // check dist btw xy & other robots' goal pose
+                            for(int robIndx2=0; robIndx2 < robotsList.size(); robIndx2++)
+                            {
+                                if ( (robotsList.at(robIndx2).robotID !=robotID) && (robotsList.at(robIndx2).coalID != coalID) )
+                                {
+                                    if (robotsList.at(robIndx2).inGoalPose != -1)
+                                        // robIndx2 has an assigned goal pose?
+                                    {
+                                        double xTmp = robotsList.at(robIndx2).goalPose.X;
+                                        double yTmp = robotsList.at(robIndx2).goalPose.Y;
+
+                                        double robotRadius2 = robotsList.at(robIndx2).radius;
+
+                                        if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + robotRadius2 + distThreshold4GeneratingPoses) )
+                                        {
+                                            distOK = 0;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // check dist btw xy & its coalition members' goal pose
+                            if (distOK == 1)
+                            {
+                                for(int robIndx2=0; robIndx2 < robIndx; robIndx2++)
+                                {
+                                    if (robotsList.at(robIndx2).inGoalPose != -1)
+                                        // robIndx2 has an assigned goal pose?
+                                    {
+                                        double xTmp = coalList.at(coalID).coalMembers.at(robIndx2).goalPose.X;
+                                        double yTmp = coalList.at(coalID).coalMembers.at(robIndx2).goalPose.Y;
+
+                                        double robotRadius2 = coalList.at(coalID).coalMembers.at(robIndx2).radius;
+
+                                        if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + robotRadius2 + distThreshold4GeneratingPoses) )
+                                        {
+                                            distOK = 0;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+
+                            // check dist btw xy & tasks' site pose
+                            if (distOK == 1)
+                            {
+                                for(int wTID = 0; wTID < waitingTasks.size();wTID++)
+                                {
+                                    double xTmp = waitingTasks.at(wTID).pose.X;
+                                    double yTmp = waitingTasks.at(wTID).pose.Y;
+
+                                    if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + waitingTasks.at(wTID).taskSiteRadius) )
+                                    {
+                                        distOK = 0;
+                                        break;
+                                    }
+                                }
+
+                                if (distOK == 1)
+                                {
+                                    for(int hTID = 0; hTID < handlingTasks.size();hTID++)
+                                    {
+                                        double xTmp = handlingTasks.at(hTID).pose.X;
+                                        double yTmp = handlingTasks.at(hTID).pose.Y;
+
+                                        if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + handlingTasks.at(hTID).taskSiteRadius) )
+                                        {
+                                            distOK = 0;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+
+                            if (distOK == 1)
+                                poseOK = 1;
+                        }
+                    } // end of while(poseOK==0)
+                    if(!doneInside){
+                        int x = counter / 10;
+                        while(x != 0){
+                            x/=10;
+                            robIndx--;
+                        }
+                        robIndx--;
+                        if(robIndx < 0) { done = false; break; }
+                        continue;
+                    }
+                    counter -= counter%100;
+
+                    robotsList[robotID-1].goalPose.X = robX;
+                    robotsList[robotID-1].goalPose.Y = robY;
+
+                    robotsList[robotID-1].inTaskSite = -1;
+
+                    coalList[coalID].coalMembers[robIndx].goalPose.X = robX;
+                    coalList[coalID].coalMembers[robIndx].goalPose.Y = robY;
+                    coalList[coalID].coalMembers[robIndx].inTaskSite = -1;
+                }
+                if(done) break;
+            }
+            if(isAllDone) break;
         }
     }
     else if (poseType == TASK_SITE_POSE)
     {
-        // ???
-        // ???
-        // ???
+        int taskID = -1;
+        for(int wti = 0; wti < waitingTasks.size();wti++)
+        {
+            if (QString::compare(waitingTasks.at(wti).taskUUID, coalList.at(coalID).currentTaskUUID,Qt::CaseInsensitive) == 0)
+            {
+               taskID = wti;
+               break;
+            }
+        }
+
+        double taskPoseX = waitingTasks.at(taskID).pose.X;
+        double taskPoseY = waitingTasks.at(taskID).pose.Y;
+
+
+        int numOfMem = coalList.at(coalID).coalMembers.size();
+
+        // check whether other robots' goal poses are inside the task site
+        for(int robIndx2=0; robIndx2 < robotsList.size(); robIndx2++)
+        {
+            if (robotsList.at(robIndx2).coalID != coalID)
+            {
+                if (robotsList.at(robIndx2).inGoalPose != -1)
+                    // robIndx2 has an assigned goal pose?
+                {
+                    double xTmp = robotsList.at(robIndx2).goalPose.X;
+                    double yTmp = robotsList.at(robIndx2).goalPose.Y;
+
+                    double robotRadius2 = robotsList.at(robIndx2).radius;
+
+                    if ( sqrt((taskPoseX-xTmp)*(taskPoseX-xTmp) + (taskPoseY-yTmp)*(taskPoseY-yTmp)) <= missionParams.targetSiteRadius * numOfMem + robotRadius2)
+                    {
+                        generatePoses(robotsList.at(robIndx2).coalID,GOAL_POSE);
+
+                        QVector<int> coalIDListTmp;
+                        coalIDListTmp.append(robotsList.at(robIndx2).coalID);
+
+                        sendCmd2Leaders(CMD_C2L_NEW_GOAL_POSES, coalIDListTmp);
+
+                        break;
+                    }
+                }
+            }
+        }
+
+        for(waitingTasks[taskID].taskSiteRadius = missionParams.targetSiteRadius * numOfMem;true;waitingTasks[taskID].taskSiteRadius += 10){
+            bool done = true;
+            int counter = 0;
+            for(int robIndx=0; robIndx < numOfMem; robIndx++)
+            {
+                int robotID = coalList.at(coalID).coalMembers.at(robIndx).robotID;
+
+                double robotRadius = coalList.at(coalID).coalMembers.at(robIndx).radius;
+
+                int poseOK = 0;
+                double robX;
+                double robY;
+                bool doneInside = true;
+                while(poseOK == 0)
+                {
+                    if((++counter % 100) == 0){
+                        doneInside = false;
+                        break;
+                    }
+                    robX = taskPoseX + ((rand()/ (RAND_MAX + 1.0)) * (2*(waitingTasks.at(taskID).taskSiteRadius - robotRadius))) - (waitingTasks.at(taskID).taskSiteRadius - robotRadius);
+                    robY = taskPoseY + ((rand()/ (RAND_MAX + 1.0)) * (2*(waitingTasks.at(taskID).taskSiteRadius - robotRadius))) - (waitingTasks.at(taskID).taskSiteRadius - robotRadius);
+
+                    if (sqrt(robX*robX + robY*robY) <= (missionParams.ro-robotRadius))
+                    {
+                        int distOK = 1;
+
+                        /// check dist btw xy & other robots' pose
+                        for(int robIndx2=0; robIndx2 < robotsList.size(); robIndx2++)
+                        {
+                            if ( (robotsList.at(robIndx2).robotID !=robotID) && (robotsList.at(robIndx2).coalID != coalID) )
+                            {
+                                if (robotsList.at(robIndx2).inGoalPose != -1)
+                                    // robIndx2 has an assigned goal pose?
+                                {
+                                    double xTmp = robotsList.at(robIndx2).goalPose.X;
+                                    double yTmp = robotsList.at(robIndx2).goalPose.Y;
+
+                                    double robotRadius2 = robotsList.at(robIndx2).radius;
+
+                                    if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + robotRadius2 + distThreshold4GeneratingPoses) )
+                                    {
+                                        distOK = 0;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        /// check with other robots in the same coalision
+                        if (distOK == 1)
+                        {
+                            for(int _robIndx=0; _robIndx < robIndx; _robIndx++){
+                                poseXY oldRobotPose = coalList.at(coalID).coalMembers.at(_robIndx).taskSitePose;
+                                poseXY thisRobotPose = coalList.at(coalID).coalMembers.at(robIndx).taskSitePose;
+                                double dist = sqrt((oldRobotPose.X - thisRobotPose.X)*(oldRobotPose.X - thisRobotPose.X) + (oldRobotPose.Y - thisRobotPose.Y)*(oldRobotPose.Y - thisRobotPose.Y));
+                                if(dist < coalList.at(coalID).coalMembers.at(robIndx).radius + coalList.at(coalID).coalMembers.at(_robIndx).radius + distThreshold4GeneratingPoses){
+                                    distOK = 0;
+                                    break;
+                                }
+                            }
+                        }
+
+
+                        /// check dist btw xy & tasks' site pose
+                        if (distOK == 1)
+                        {
+                            for(int wTID = 0; wTID < waitingTasks.size();wTID++)
+                            {
+                                if(wTID == taskID) continue;
+
+                                double xTmp = waitingTasks.at(wTID).pose.X;
+                                double yTmp = waitingTasks.at(wTID).pose.Y;
+
+                                if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + waitingTasks.at(wTID).taskSiteRadius) )
+                                {
+                                    distOK = 0;
+                                    break;
+                                }
+                            }
+
+                            if (distOK == 1)
+                            {
+                                for(int hTID = 0; hTID < handlingTasks.size();hTID++)
+                                {
+                                    double xTmp = handlingTasks.at(hTID).pose.X;
+                                    double yTmp = handlingTasks.at(hTID).pose.Y;
+
+                                    if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + handlingTasks.at(hTID).taskSiteRadius) )
+                                    {
+                                        distOK = 0;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+
+                        if (distOK == 1)
+                            poseOK = 1;
+                    }
+
+                }
+                if(!doneInside){
+                    int x = counter / 10;
+                    while(x != 0){
+                        x/=10;
+                        robIndx--;
+                    }
+                    robIndx--;
+                    if(robIndx < 0) { done = false; break; }
+                    continue;
+                }
+                counter -= counter%100;
+                coalList[coalID].coalMembers[robIndx].taskSitePose.X = robX;
+                coalList[coalID].coalMembers[robIndx].taskSitePose.Y = robY;
+                coalList[coalID].coalMembers[robIndx].inGoalPose = -1;
+                robotsList[robotID - 1].taskSitePose.X = robX;
+                robotsList[robotID - 1].taskSitePose.Y = robY;
+                robotsList[robotID - 1].inGoalPose = -1;
+            }
+            if(done) break;
+        }
     }
 
 }
@@ -1332,6 +1610,26 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
                 msgStr.append(QString::number(coalList.at(coalID).coalMembers.at(robIndx).goalPose.X));
                 msgStr.append(",");
                 msgStr.append(QString::number(coalList.at(coalID).coalMembers.at(robIndx).goalPose.Y));
+
+                if (robIndx<(numOfMem-1))
+                    msgStr.append(";");
+            }
+
+            if (msgStr.size() != 0)
+                targetPosesStr.append(msgStr).append(";");
+        }
+        else if (cmdType == CMD_C2L_NEW_ALL_TARGET_POSES)
+        {
+            // msgStr = robotID1,posex1,posey1;robotID2,posex2,posey2;...;robotIDn,posexn,poseyn
+
+            int numOfMem = coalList.at(coalID).coalMembers.size();
+            for(int robIndx=0; robIndx < numOfMem; robIndx++)
+            {
+                msgStr.append(QString::number(coalList.at(coalID).coalMembers.at(robIndx).robotID));
+                msgStr.append(",");
+                msgStr.append(QString::number(coalList.at(coalID).coalMembers.at(robIndx).taskSitePose.X));
+                msgStr.append(",");
+                msgStr.append(QString::number(coalList.at(coalID).coalMembers.at(robIndx).taskSitePose.Y));
 
                 if (robIndx<(numOfMem-1))
                     msgStr.append(";");
@@ -1419,11 +1717,17 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
 
 
                 // set the startHandlingTime
-                waitingTasks[wti].startHandlingTime = QDateTime::currentDateTime().toTime_t();
+                //waitingTasks[wti].startHandlingTime = QDateTime::currentDateTime().toTime_t();
                 // add the task to handlingTasks
-                handlingTasks.append(waitingTasks.at(wti));
+                //handlingTasks.append(waitingTasks.at(wti));
+
+                waitingTasks[wti].status = TS_SUCCORING;
+                waitingTasks[wti].responsibleUnit = coalList.at(coalID).coalLeaderID;
+
+                pubTaskInfo2Monitor(taskProp(waitingTasks.at(wti)));
+
                 // remove the task from waitingTasks
-                waitingTasks.remove(wti);
+                //waitingTasks.remove(wti);
             }
 
         }
@@ -1447,6 +1751,27 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
 
     cmd2LeadersPub.publish(msg);
 
+}
+
+// publish task info to monitoringISLH
+void RosThread::pubTaskInfo2Monitor(taskProp task)
+{    
+    ISLH_msgs::taskInfo2MonitorMessage taskInfoMsg;
+
+    taskInfoMsg.encounteringRobotID = task.encounteringRobotID;
+    taskInfoMsg.encounteringTime = task.encounteringTime;
+    taskInfoMsg.handlingDuration = task.handlingDuration;
+    taskInfoMsg.posXY.x = task.pose.X;
+    taskInfoMsg.posXY.y = task.pose.Y;
+    taskInfoMsg.responsibleUnit = task.responsibleUnit;
+    taskInfoMsg.startHandlingTime = task.startHandlingTime;
+    taskInfoMsg.status = task.status;
+    taskInfoMsg.taskResource = task.requiredResourcesString.toStdString();
+    taskInfoMsg.taskUUID = task.taskUUID.toStdString();
+    taskInfoMsg.timeOutDuration = task.timeOutDuration;
+    taskInfoMsg.taskSiteRadius = task.taskSiteRadius;
+
+    taskInfo2MonitorPub.publish(taskInfoMsg);
 }
 
 QVector <QVector <QVector <uint> > > RosThread::generatePartitions(QVector <uint> robotList)
@@ -1583,8 +1908,8 @@ bool RosThread::readConfigFile(QString filename)
         missionParams.numOfRobots = result["numrobots"].toInt();
         qDebug()<< " number of robots " << missionParams.numOfRobots;
 
-        missionParams.taskSiteRadius = result["taskSiteRadius"].toDouble();
-        qDebug()<< " taskSiteRadius " << missionParams.taskSiteRadius;
+        missionParams.targetSiteRadius = result["targetSiteRadius"].toDouble();
+        qDebug()<< " targetSiteRadius " << missionParams.targetSiteRadius;
 
         missionParams.taskCheckingPeriod = result["taskCheckingPeriod"].toDouble();
         qDebug()<< " taskCheckingPeriod " << missionParams.taskCheckingPeriod;
@@ -1643,6 +1968,9 @@ bool RosThread::readConfigFile(QString filename)
             robotTmp.coalID = rID-1;
             robotTmp.robotID = rID;
             robotTmp.resources = resources;
+
+            robotTmp.inGoalPose = -1;
+            robotTmp.inTaskSite = -1;
 
             robotsList[rID-1] = robotTmp;
         }

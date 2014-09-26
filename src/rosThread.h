@@ -9,7 +9,17 @@
 #include <ISLH_msgs/taskInfoFromLeaderMessage.h>
 #include <ISLH_msgs/cmd2LeadersMessage.h>
 #include <ISLH_msgs/robotPositions.h>
+#include <ISLH_msgs/taskInfo2MonitorMessage.h>
 #include "std_msgs/UInt8.h"
+#include "std_msgs/Int8MultiArray.h"
+
+/*
+enum TaskInfoType
+{
+    TI_NEW_TASK = 1,
+    TI_STATUS_UPDATE = 2
+};
+*/
 
 enum PoseType
 {
@@ -21,9 +31,10 @@ enum TaskStatus
 {
     TS_NOT_ASSIGNED = 0,
     TS_WAITING = 1,
-    TS_HANDLING = 2,
-    TS_COMPLETED = 3,
-    TS_NOT_COMPLETED = 4
+    TS_SUCCORING = 2,
+    TS_HANDLING = 3,
+    TS_COMPLETED = 4,
+    TS_NOT_COMPLETED = 5
 };
 
 enum CoalitionStatus
@@ -68,7 +79,7 @@ struct missionParameters{
     bool startMission;
     int numOfRobots;
     int taskCheckingPeriod; // in seconds
-    double taskSiteRadius;
+    double targetSiteRadius;
 
     double ro; // workspace radius
 };
@@ -113,11 +124,11 @@ struct taskProp{
     uint handlingDuration; // in seconds - "the required time to handle the task"
     uint timeOutDuration; // "the timed-out duration for the task"
     int status; // "status of the task"
-    //
     uint startHandlingTime; // in timestamp - "the time when the task starts being handled"
     poseXY pose; // the location of the task
     QVector < double > requiredResources;
     QString requiredResourcesString;
+    double taskSiteRadius;
 
     coalProp engagedCoalition; // the coalition is handling this task
 };
@@ -144,6 +155,10 @@ private:
     ros::NodeHandle n;
 
     ros::Publisher cmd2LeadersPub;
+
+    ros::Publisher leaderIDInfo2MonitorPub;
+
+    ros::Publisher taskInfo2MonitorPub;
 
     ros::Subscriber messageTaskInfoFromLeaderSub;
 
@@ -173,6 +188,8 @@ private:
     void handleStartMission(std_msgs::UInt8 msg);
 
     void manageCoalitions();
+
+    void pubTaskInfo2Monitor(taskProp task);
 
     void sendCmd2Leaders(int cmdType, QVector <int> coalIDList);
 
