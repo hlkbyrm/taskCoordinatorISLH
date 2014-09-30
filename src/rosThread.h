@@ -31,10 +31,11 @@ enum TaskStatus
 {
     TS_NOT_ASSIGNED = 0,
     TS_WAITING = 1,
-    TS_SUCCORING = 2,
-    TS_HANDLING = 3,
-    TS_COMPLETED = 4,
-    TS_NOT_COMPLETED = 5
+    TS_WAITING_TASK_POSE = 2,
+    TS_SUCCORING = 3,
+    TS_HANDLING = 4,
+    TS_COMPLETED = 5,
+    TS_NOT_COMPLETED = 6
 };
 
 enum CoalitionStatus
@@ -143,6 +144,8 @@ public:
 
 
 private:
+
+    int queueSize;
 
     int ownRobotID;
 

@@ -54,17 +54,17 @@ void RosThread::work()
     ct.stop();
 
 
-    messageTaskInfoFromLeaderSub = n.subscribe("messageDecoderISLH/taskInfoFromLeader",5,&RosThread::handleTaskInfoFromLeader, this);
+    messageTaskInfoFromLeaderSub = n.subscribe("messageDecoderISLH/taskInfoFromLeader",queueSize,&RosThread::handleTaskInfoFromLeader, this);
 
-    messagePoseListSub = n.subscribe("localizationISLH/poseList",5,&RosThread::handlePoseList, this);
+    messagePoseListSub = n.subscribe("localizationISLH/poseList",queueSize,&RosThread::handlePoseList, this);
 
-    messageStartMissionSub = n.subscribe("monitoringISLH/startMission", 5,&RosThread::handleStartMission, this);
+    messageStartMissionSub = n.subscribe("monitoringISLH/startMission", queueSize,&RosThread::handleStartMission, this);
 
-    cmd2LeadersPub = n.advertise<ISLH_msgs::cmd2LeadersMessage>("taskCoordinatorISLH/cmd2Leaders",5);
+    cmd2LeadersPub = n.advertise<ISLH_msgs::cmd2LeadersMessage>("taskCoordinatorISLH/cmd2Leaders",queueSize);
 
-    leaderIDInfo2MonitorPub = n.advertise<std_msgs::Int8MultiArray>("taskCoordinatorISLH/leaderIDInfo2Monitor",5);
+    leaderIDInfo2MonitorPub = n.advertise<std_msgs::Int8MultiArray>("taskCoordinatorISLH/leaderIDInfo2Monitor",queueSize);
 
-    taskInfo2MonitorPub =  n.advertise<ISLH_msgs::taskInfo2MonitorMessage>("taskCoordinatorISLH/taskInfo2Monitor",5);
+    taskInfo2MonitorPub =  n.advertise<ISLH_msgs::taskInfo2MonitorMessage>("taskCoordinatorISLH/taskInfo2Monitor",queueSize);
 
 /*
     QVector <uint> robotList;
@@ -219,8 +219,27 @@ void RosThread::handleStartMission(std_msgs::UInt8 msg)
 void RosThread::manageCoalitions()
 {
 
-    if (waitingTasks.size()>0)
+    bool waitingTaskAvailable=false;
+
+    for(int wti = 0; wti < waitingTasks.size(); wti++){
+        if(waitingTasks.at(wti).status == TS_NOT_ASSIGNED || waitingTasks.at(wti).status == TS_WAITING){
+
+           uint currentTime = QDateTime::currentDateTime().toTime_t();
+           if (currentTime - waitingTasks.at(wti).encounteringTime >= waitingTasks.at(wti).timeOutDuration)
+           {
+                timedoutTasks.append(waitingTasks.at(wti));
+                waitingTasks.remove(wti);
+
+                wti = wti - 1;
+           }
+           else
+            waitingTaskAvailable = true;
+        }
+    }
+
+    if (waitingTaskAvailable)
     {
+        qDebug() << "managing waiting tasks";
         // check whether all the resources of the available coalitions are sufficient at least for one of the waiting tasks
 
         //QVector <int> availCoalIDList;
@@ -230,7 +249,7 @@ void RosThread::manageCoalitions()
 
         for(int coalIndx = 0; coalIndx < coalList.size();coalIndx++)
         {
-            if ( (coalList.at(coalIndx).status != CS_SUCCORING) && (coalList.at(coalIndx).status != CS_HANDLING) )
+            if ( (coalList.at(coalIndx).status != CS_SUCCORING) && (coalList.at(coalIndx).status != CS_HANDLING))
             {
                 //availCoalIDList.append(coalIndx);
 
@@ -248,23 +267,29 @@ void RosThread::manageCoalitions()
 
         for(int wTID = 0; wTID < waitingTasks.size();wTID++)
         {
-            int resOK = 0;
-            for(int resID = 0; resID < numOfRes; resID++)
+            if(waitingTasks.at(wTID).status == TS_NOT_ASSIGNED || waitingTasks.at(wTID).status == TS_WAITING)
             {
-                if (waitingTasks.at(wTID).requiredResources.at(resID) <= availTotRes.at(resID))
+                int resOK = 0;
+                for(int resID = 0; resID < numOfRes; resID++)
                 {
-                    resOK = resOK + 1;
+                    if (waitingTasks.at(wTID).requiredResources.at(resID) <= availTotRes.at(resID))
+                    {
+                        resOK = resOK + 1;
+                    }
                 }
-            }
 
-            if (resOK == numOfRes)
-            {
-                wTaskIDList.append(wTID);
+                if (resOK == numOfRes)
+                {
+                    wTaskIDList.append(wTID);
+                }
             }
         }
 
         if (wTaskIDList.size()>0)
         {
+
+            qDebug() << "available robots for waiting tasks";
+
             _coalList = QVector <coalProp>(coalList);
             _waitingTasks = QVector <taskProp>(waitingTasks);
 
@@ -272,6 +297,8 @@ void RosThread::manageCoalitions()
             // run the coalition formation game //
             // .................................//
             runCFG(wTaskIDList);//, availCoalIDList);
+
+            qDebug() << "runCFG is successful";
 
             // check whether the merged/established coalitions have sufficient resources for their associated tasks
             // in turn, send the corresponding messages to the established coalitions' members
@@ -387,6 +414,8 @@ void RosThread::manageCoalitions()
                 coalIDListTmp.append(coalIndx);
 
             sendCmd2Leaders(CMD_C2L_COALITION_MEMBERS, coalIDListTmp);
+
+            qDebug() << "end of managing waiting tasks";
 
             // clear temporary variables
             _coalList.clear();
@@ -694,7 +723,7 @@ int RosThread::findCoalition(int coalID, int wTaskID, QVector <int> wTaskIDList)
                 coalValTmp = calcCoalValue(_coalList.at(coalIDTmp).coalMembers, _waitingTasks.at(taskIDTmp));
             }
 
-            QVector <robotProp> mergedCoalRobotsTmp = _coalList.at(coalID).coalMembers;
+            QVector <robotProp> mergedCoalRobotsTmp = QVector <robotProp> (_coalList.at(coalID).coalMembers);
             for(int robIndx = 0; robIndx < _coalList.at(coalIDTmp).coalMembers.size();robIndx++)
             {
                 mergedCoalRobotsTmp.append(_coalList.at(coalIDTmp).coalMembers.at(robIndx));
@@ -726,8 +755,7 @@ void RosThread::mergeCoalitions(int coalID, int mCoalID)
         double mCoalIDRes = _coalList.at(mCoalID).coalTotalResources.at(resID);
         coalTotResourcesTmp.append( coalIDRes + mCoalIDRes);
     }
-    _coalList[coalID].coalTotalResources = coalTotResourcesTmp;
-
+    _coalList[coalID].coalTotalResources = QVector <double> (coalTotResourcesTmp);
 
     // add robots in mCoalID to coalID
     for(int robIndx = 0; robIndx < _coalList.at(mCoalID).coalMembers.size();robIndx++)
@@ -770,7 +798,7 @@ int RosThread::findSplittedRobot(int coalID, int taskID)
         for(int robIndx = 0; robIndx < _coalList.at(coalID).coalMembers.size();robIndx++)
         {
 
-            QVector <robotProp> coalRobotIDsTmp(_coalList.at(coalID).coalMembers);
+            QVector <robotProp> coalRobotIDsTmp = QVector <robotProp> (_coalList.at(coalID).coalMembers);
 
             coalRobotIDsTmp.remove(robIndx);
 
@@ -802,9 +830,9 @@ void RosThread::splitCoalition(int splitRobotID, int coalID)
    newCoalMembers[0].inGoalPose = -1;
    newCoalMembers[0].inTaskSite = -1;
 
-   newCoal.coalTotalResources =  newCoalMembers.at(0).resources;
+   newCoal.coalTotalResources =  QVector <double> (newCoalMembers.at(0).resources);
 
-   newCoal.coalMembers = newCoalMembers;
+   newCoal.coalMembers = QVector <robotProp> (newCoalMembers);
 
    newCoal.currentTaskUUID = "NONE";
 
@@ -921,8 +949,6 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
 
         newTask.requiredResourcesString = QString::fromStdString(infoMsg.requiredResources);
 
-        newTask.status = TS_NOT_ASSIGNED;
-
         QStringList resourceParts = newTask.requiredResourcesString.split(",",QString::SkipEmptyParts);
 
         newTask.requiredResources.clear();
@@ -934,6 +960,9 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
 
         if ( infoMsg.infoTypeID == INFO_L2C_INSUFFICIENT_RESOURCE )
         {
+            newTask.status = TS_NOT_ASSIGNED;
+            newTask.responsibleUnit = -1;
+
             waitingTasks.append(newTask);
 
             for(int i = 0; i < coalList.size();i++)
@@ -949,7 +978,7 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
         }
         else // INFO_L2C_WAITING_TASK_SITE_POSE
         {
-            newTask.status = TS_WAITING;
+            newTask.status = TS_SUCCORING;
             newTask.responsibleUnit = infoMsg.senderRobotID;
 
             waitingTasks.append(newTask);
@@ -1893,6 +1922,9 @@ bool RosThread::readConfigFile(QString filename)
     }
     else
     {
+        queueSize = result["queueSize"].toInt();
+        qDebug()<< " queueSize " << queueSize;
+
         cvfParams.w1 = result["cvf-w1"].toDouble();
         qDebug()<< " w1 " << cvfParams.w1;
 
