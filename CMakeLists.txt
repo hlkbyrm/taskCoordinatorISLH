@@ -11,7 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 
-#SET(CMAKE_BUILD_TYPE Debug)
+SET(CMAKE_BUILD_TYPE Debug)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
