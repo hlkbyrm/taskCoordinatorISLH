@@ -1043,6 +1043,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
 
         newTask.taskUUID = QString::fromStdString(infoMsg.taskUUID);
 
+        newTask.timeOutDuration = infoMsg.timeOutDuration;
+
         newTask.pose.X = infoMsg.posX;
 
         newTask.pose.Y = infoMsg.posY;
@@ -1128,6 +1130,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
         newTask.encounteringTime = infoMsg.encounteringTime;
 
         newTask.startHandlingTime = infoMsg.startHandlingTime;
+
+        newTask.timeOutDuration = infoMsg.timeOutDuration;
 
         newTask.requiredResourcesString = QString::fromStdString(infoMsg.requiredResources);
 
@@ -1734,8 +1738,8 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
         for(int coalPrevIndx = 0; coalPrevIndx <coalListPrev.size();coalPrevIndx++){
             int leaderID =  coalListPrev.at(coalPrevIndx).coalLeaderID;
             bool isLeader = false;
-            for(int coalIndx=0; coalIndx < coalIDList.size(); coalIndx++){
-                if (leaderID == coalList.at(coalIDList.at(coalIndx)).coalLeaderID){
+            for(int coalIndx=0; coalIndx < coalList.size(); coalIndx++){
+                if (leaderID == coalList.at(coalIndx).coalLeaderID){
                     isLeader = true;
                     break;
                 }
