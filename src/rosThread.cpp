@@ -1092,10 +1092,13 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
 
             waitingTasks.append(newTask);
 
+
             for(int i = 0; i < coalList.size();i++)
             {
                 if (coalList.at(i).coalLeaderID == infoMsg.senderRobotID)
                 {
+                    coalList[i].currentTaskUUID = QString::fromStdString(infoMsg.taskUUID);
+
                     generatePoses(i, TASK_SITE_POSE);
 
                     QVector <int> coalIDListTmp;
@@ -1104,7 +1107,6 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
                     sendCmd2Leaders(CMD_C2L_NEW_TASK_SITE_POSES, coalIDListTmp);
 
                     coalList[i].status = CS_SUCCORING;
-                    coalList[i].currentTaskUUID = QString::fromStdString(infoMsg.taskUUID);
 
 
                     break;
