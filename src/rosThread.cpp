@@ -298,7 +298,7 @@ void RosThread::manageCoalitions()
             _coalList = QVector <coalProp>(coalList);
             _waitingTasks = QVector <taskProp>(waitingTasks);
 
-            coalListHist.append(coalList);
+            coalListHist.append(QVector <coalProp>(coalList));
 
             // .................................//
             // run the coalition formation game //
@@ -1045,6 +1045,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
 
         newTask.timeOutDuration = infoMsg.timeOutDuration;
 
+        newTask.handlingDuration = infoMsg.handlingDuration;
+
         newTask.pose.X = infoMsg.posX;
 
         newTask.pose.Y = infoMsg.posY;
@@ -1128,6 +1130,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
         newTask.pose.Y = infoMsg.posY;
 
         newTask.encounteringTime = infoMsg.encounteringTime;
+
+        newTask.handlingDuration = infoMsg.handlingDuration;
 
         newTask.startHandlingTime = infoMsg.startHandlingTime;
 
