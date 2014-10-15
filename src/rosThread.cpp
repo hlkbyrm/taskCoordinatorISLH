@@ -427,13 +427,18 @@ void RosThread::manageCoalitions()
             coalList = QVector <coalProp> (_coalListTmp);
 
             // generate task site poses for the capable coalitions
+            qDebug()<<"Capable coalitions";
+            QVector <int> capableCoalIDListTmp2;
             for(int coalID = 0; coalID < capableCoalIDListTmp.size(); coalID++)
             {
+                qDebug()<<"coalID "<<coalID;
                 generatePoses(coalID, TASK_SITE_POSE);
                 coalList[coalID].status = CS_SUCCORING;
+
+                capableCoalIDListTmp2.append(coalID);
             }
 
-            sendCmd2Leaders(CMD_C2L_NEW_TASK_SITE_POSES, capableCoalIDListTmp);
+            sendCmd2Leaders(CMD_C2L_NEW_TASK_SITE_POSES, capableCoalIDListTmp2);
 
 
 
@@ -648,7 +653,9 @@ void RosThread::runCFG(QVector <int> wTaskIDList)//, QVector <int> availCoalIDLi
                     if (mCoalID > -1)
                     {
                         //merge these two coalitions
-                        mergeCoalitions(coalID, mCoalID);
+                        int newCoalLeaderID = mergeCoalitions(coalID, mCoalID);
+
+                        _waitingTasks[wTaskID].responsibleUnit = newCoalLeaderID;
 
                         changeNum = changeNum + 1;
 
@@ -709,7 +716,7 @@ void RosThread::runCFG(QVector <int> wTaskIDList)//, QVector <int> availCoalIDLi
                         splitCoalition(splitRobotID, coalID);
 
                         if (splitRobotID==_waitingTasks.at(wTaskID).responsibleUnit)
-                            // this meand that the splitted robot is coalition leader
+                            // this means that the splitted robot is coalition leader
                         {
                             int minRobotID = 9999999;
                             for(int robIndx = 0; robIndx < _coalList.at(coalID).coalMembers.size();robIndx++)
@@ -774,7 +781,7 @@ int RosThread::findCoalition(int coalID, int wTaskID, QVector <int> wTaskIDList)
 
         if (coalIDTmp != coalID)
         {
-            //check whether coalIDTemp is responsible for any task
+            //check whether coalIDTmp is responsible for any task
             int taskIDTmp = -1;
             for(int wTIndx = 0; wTIndx < wTaskIDList.size(); wTIndx++)
             {
@@ -829,7 +836,7 @@ int RosThread::findCoalition(int coalID, int wTaskID, QVector <int> wTaskIDList)
 }
 
 // Merge the given two coalitions
-void RosThread::mergeCoalitions(int coalID, int mCoalID)
+int RosThread::mergeCoalitions(int coalID, int mCoalID)
 {
     int numOfRes = _waitingTasks.at(0).requiredResources.size();
     QVector <double> coalTotResourcesTmp;
@@ -885,6 +892,8 @@ void RosThread::mergeCoalitions(int coalID, int mCoalID)
 
     _coalList.remove(mCoalID);
 
+    return newLeaderID;
+
 }
 
 //  find a robot to be splitted from the coalition
@@ -923,11 +932,22 @@ int RosThread::findSplittedRobot(int coalID, int taskID)
 void RosThread::splitCoalition(int splitRobotID, int coalID)
 {
 
+    // establish a new signleton coalition
    coalProp newCoal;
    newCoal.coalLeaderID = splitRobotID;
 
+   // find the splitted robot's index (robIndx) in coalMembers vector
+   int robIndx;
+   for(robIndx = 0; robIndx < _coalList.at(coalID).coalMembers.size();robIndx++)
+   {
+       if (_coalList.at(coalID).coalMembers.at(robIndx).robotID == splitRobotID)
+       {
+           break;
+       }
+   }
+
    QVector <robotProp> newCoalMembers;
-   newCoalMembers.append(_coalList.at(coalID).coalMembers.at(splitRobotID));
+   newCoalMembers.append(_coalList.at(coalID).coalMembers.at(robIndx));
 
    newCoalMembers[0].inGoalPose = -1;
    newCoalMembers[0].inTaskSite = -1;
@@ -935,13 +955,23 @@ void RosThread::splitCoalition(int splitRobotID, int coalID)
    newCoal.coalTotalResources =  QVector <double> (newCoalMembers.at(0).resources);
 
    newCoal.coalMembers = QVector <robotProp> (newCoalMembers);
-
    newCoal.currentTaskUUID = "NONE";
-
    newCoal.status = CS_WAITING_GOAL_POSE;
 
-
+   // add the new singleton coalition to _coalList
    _coalList.append(newCoal);
+
+   // update the total resources of the coalition coalID after splitting
+   for(int resID=0; resID<_coalList.at(coalID).coalTotalResources.size();resID++)
+   {
+       _coalList[coalID].coalTotalResources[resID] = _coalList[coalID].coalTotalResources[resID] - _coalList.at(coalID).coalMembers.at(robIndx).resources.at(resID);
+   }
+
+   // remove the splitted member from the coalition coalID
+   _coalList[coalID].coalMembers.remove(robIndx);
+
+
+
 }
 
 // calculate the value of a given coalition coalMmbrs for a given task
@@ -1079,7 +1109,7 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
                 {
                     coalList[i].status = CS_WAITING_TASK_RESPONSE_FROM_COORDINATOR;
                     coalList[i].currentTaskUUID = QString::fromStdString(infoMsg.taskUUID);
-
+                    qDebug()<<"coalition leader was found.";
                     break;
                 }
             }
@@ -1303,6 +1333,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
                         break;
                     }
                 }
+
+                handlingTasks[i].status = TS_COMPLETED;
 
                 pubTaskInfo2Monitor(taskProp(handlingTasks.at(i)));
 
@@ -1543,10 +1575,12 @@ void RosThread::generatePoses(int coalID, int poseType)
                     robotsList[robotID-1].goalPose.Y = robY;
 
                     robotsList[robotID-1].inTaskSite = -1;
+                    robotsList[robotID-1].inGoalPose = 0;
 
                     coalList[coalID].coalMembers[robIndx].goalPose.X = robX;
                     coalList[coalID].coalMembers[robIndx].goalPose.Y = robY;
                     coalList[coalID].coalMembers[robIndx].inTaskSite = -1;
+                    coalList[coalID].coalMembers[robIndx].inGoalPose = 0;
                 }
                 if(done) break;
             }
@@ -1730,6 +1764,8 @@ void RosThread::generatePoses(int coalID, int poseType)
 // prepare a command message to the coalition leader
 void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
 {
+    qDebug()<< "sendCmd2Leaders-> cmdType: "<<cmdType;
+
     ISLH_msgs::cmd2LeadersMessage msg;
 
     std::time_t sendingTime = std::time(0);
@@ -1783,6 +1819,8 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
     for(int cIndx=0; cIndx < coalIDList.size(); cIndx++)
     {
         int coalID = coalIDList.at(cIndx);
+
+        qDebug() <<"coalID: "<< coalID <<"coalLeaderID: "<< coalList.at(coalID).coalLeaderID;
 
         msg.leaderRobotID.push_back(coalList.at(coalID).coalLeaderID);
 
@@ -1879,11 +1917,11 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
                 msgStr.append(";");
 
                 if (coalList.at(coalID).status == CS_SUCCORING){
-                msgStr.append("t"); // task site pose
-                msgStr.append(",");
-                msgStr.append(QString::number(coalList.at(coalID).coalMembers.at(i).taskSitePose.X));
-                msgStr.append(",");
-                msgStr.append(QString::number(coalList.at(coalID).coalMembers.at(i).taskSitePose.Y));
+                    msgStr.append("t"); // task site pose
+                    msgStr.append(",");
+                    msgStr.append(QString::number(coalList.at(coalID).coalMembers.at(i).taskSitePose.X));
+                    msgStr.append(",");
+                    msgStr.append(QString::number(coalList.at(coalID).coalMembers.at(i).taskSitePose.Y));
                 }
                 else{
                     msgStr.append("g"); // goal pose
@@ -1947,7 +1985,7 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
 
     }
 
-    if(targetPosesStr.size() != 0){
+    if(targetPosesStr.size() > 0){
         targetPosesStr.remove(targetPosesStr.size()-1,1);
         for(int cIndx=0; cIndx < coalList.size(); cIndx++)
         {
@@ -2169,7 +2207,7 @@ bool RosThread::readConfigFile(QString filename)
         QVariantMap nestedMap = result["Robots"].toMap();
         foreach (QVariant plugin, nestedMap["Robot"].toList()) {
             QString rNameStr = plugin.toMap()["name"].toString();
-            rNameStr.remove("IRobot");
+            //rNameStr.remove("IRobot");
             int rID = rNameStr.toInt();
 
             QString resourceStr =  plugin.toMap()["resources"].toString();

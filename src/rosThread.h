@@ -206,7 +206,7 @@ private:
 
     int findCoalition(int coalID, int wTaskID, QVector <int> wTaskIDList);
 
-    void mergeCoalitions(int coalID, int mCoalID);
+    int mergeCoalitions(int coalID, int mCoalID); // return new leader robotID
 
     int findSplittedRobot(int coalID, int taskID);
 
