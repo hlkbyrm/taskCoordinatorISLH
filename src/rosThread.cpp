@@ -852,11 +852,11 @@ int RosThread::mergeCoalitions(int coalID, int mCoalID)
 
     if (_coalList.at(coalID).coalLeaderID < _coalList.at(mCoalID).coalLeaderID)
     {
-         newLeaderID = coalList.at(coalID).coalLeaderID;
+         newLeaderID = _coalList.at(coalID).coalLeaderID;
     }
     else
     {
-        newLeaderID = coalList.at(mCoalID).coalLeaderID;
+        newLeaderID = _coalList.at(mCoalID).coalLeaderID;
     }
 
 
