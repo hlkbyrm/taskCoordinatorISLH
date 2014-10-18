@@ -438,10 +438,6 @@ void RosThread::manageCoalitions()
                 capableCoalIDListTmp2.append(coalID);
             }
 
-            sendCmd2Leaders(CMD_C2L_NEW_TASK_SITE_POSES, capableCoalIDListTmp2);
-
-
-
             QVector <int> coalIDListTmp;
             for(int coalIndx = 0; coalIndx < coalList.size(); coalIndx++)
             {
@@ -495,6 +491,25 @@ void RosThread::manageCoalitions()
             qDebug()<<"end of coals";
 
             sendCmd2Leaders(CMD_C2L_COALITION_MEMBERS, coalIDListTmp);
+
+            QVector <int> capableOldCoalIDListTmp;
+            for(int coalIndx = 0; coalIndx < capableCoalIDListTmp2.size(); coalIndx++)
+            {
+                bool avail = false;
+                for(int coalIndx2 = 0; coalIndx2 < coalIDListTmp.size(); coalIndx2++)
+                {
+                    if (capableCoalIDListTmp2.at(coalIndx)==coalIDListTmp.at(coalIndx2))
+                    {
+                        avail = true;
+                        break;
+                    }
+                }
+
+                if (avail)
+                    capableOldCoalIDListTmp.append(capableCoalIDListTmp2.at(coalIndx));
+            }
+
+            sendCmd2Leaders(CMD_C2L_NEW_TASK_SITE_POSES, capableOldCoalIDListTmp);
 
             qDebug() << "end of managing waiting tasks";
 
@@ -1460,7 +1475,8 @@ void RosThread::generatePoses(int coalID, int poseType)
                 {
                     int robotID = coalList.at(coalID).coalMembers.at(robIndx).robotID;
 
-                    double robotRadius = coalList.at(coalID).coalMembers.at(robIndx).radius;
+                    //double robotRadius = coalList.at(coalID).coalMembers.at(robIndx).radius;
+                    double robotRadius = robotsList.at(coalList.at(coalID).coalMembers.at(robIndx).robotID-1).radius;
                     double robX,robY;
                     bool doneInside = true;
 
@@ -1511,7 +1527,8 @@ void RosThread::generatePoses(int coalID, int poseType)
                                         double xTmp = coalList.at(coalID).coalMembers.at(robIndx2).goalPose.X;
                                         double yTmp = coalList.at(coalID).coalMembers.at(robIndx2).goalPose.Y;
 
-                                        double robotRadius2 = coalList.at(coalID).coalMembers.at(robIndx2).radius;
+                                        //double robotRadius2 = coalList.at(coalID).coalMembers.at(robIndx2).radius;
+                                        double robotRadius2 = robotsList.at(coalList.at(coalID).coalMembers.at(robIndx2).robotID-1).radius;
 
                                         if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + robotRadius2 + distThreshold4GeneratingPoses) )
                                         {
