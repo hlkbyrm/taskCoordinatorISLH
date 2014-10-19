@@ -270,6 +270,7 @@ void RosThread::manageCoalitions()
 
         QVector <int> wTaskIDList;
 
+        qDebug()<< "tasks to be assigned";
         for(int wTID = 0; wTID < waitingTasks.size();wTID++)
         {
             if(waitingTasks.at(wTID).status == TS_NOT_ASSIGNED || waitingTasks.at(wTID).status == TS_WAITING)
@@ -286,6 +287,7 @@ void RosThread::manageCoalitions()
                 if (resOK == numOfRes)
                 {
                     wTaskIDList.append(wTID);
+                    qDebug()<<"taskUUID: "<<waitingTasks.at(wTID).taskUUID <<" encountering robot: "<<waitingTasks.at(wTID).encounteringRobotID;
                 }
             }
         }
@@ -310,8 +312,16 @@ void RosThread::manageCoalitions()
             // check whether the merged/established coalitions have sufficient resources for their associated tasks
             // in turn, send the corresponding messages to the established coalitions' members
 
+            qDebug()<<"_coalList after runCFG";
+            for(int coalIndx = 0; coalIndx < _coalList.size(); coalIndx++)
+            {
+                qDebug()<<"coalID: "<<coalIndx << "coal size: "<<_coalList.at(coalIndx).coalMembers.size() << "assigned taskUUID: " <<_coalList.at(coalIndx).currentTaskUUID;
+
+            }
+
             QVector <int> capableCoalIDListTmp;// the coalitions capable of performing the assigned task
 
+            qDebug()<<"Capable coalIDs";
             for(int wTIndx = 0; wTIndx < wTaskIDList.size(); wTIndx++)
             {
                 int wTaskID = wTaskIDList.at(wTIndx);
@@ -335,11 +345,14 @@ void RosThread::manageCoalitions()
                             // the established coalition "_coalList.at(coalIndx)" has sufficient
                             //  resources for the given waiting task "_waitingTasks.at(wTaskID).taskUUID"
                             capableCoalIDListTmp.append(coalIndx);
+                            qDebug()<<"coalID: "<<coalIndx << "coal size: "<<_coalList.at(coalIndx).coalMembers.size() << "assigned taskUUID: " <<_coalList.at(coalIndx).currentTaskUUID;
                         }
                         else
                         {
                             _coalList[coalIndx].currentTaskUUID = "NONE";
                         }
+
+                        break;
                     }
                 }
             }
@@ -505,7 +518,7 @@ void RosThread::manageCoalitions()
                     }
                 }
 
-                if (avail)
+                if (avail == false)
                     capableOldCoalIDListTmp.append(capableCoalIDListTmp2.at(coalIndx));
             }
 
