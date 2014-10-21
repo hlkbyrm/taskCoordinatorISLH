@@ -195,6 +195,7 @@ void RosThread::shutdownROS()
 
 void RosThread::handleStartMission(std_msgs::UInt8 msg)
 {
+    qDebug() << "Start-Stop MSG!";
     if (coordinatorRobotID == ownRobotID)
     {
         if (msg.data == 1)
@@ -1670,7 +1671,7 @@ void RosThread::generatePoses(int coalID, int poseType)
             {
                 int robotID = coalList.at(coalID).coalMembers.at(robIndx).robotID;
 
-                double robotRadius = coalList.at(coalID).coalMembers.at(robIndx).radius;
+                double robotRadius = robotsList.at(robotID-1).radius;//coalList.at(coalID).coalMembers.at(robIndx).radius;
 
                 int poseOK = 0;
                 double robX;
@@ -1717,8 +1718,10 @@ void RosThread::generatePoses(int coalID, int poseType)
                             for(int _robIndx=0; _robIndx < robIndx; _robIndx++){
                                 poseXY oldRobotPose = coalList.at(coalID).coalMembers.at(_robIndx).taskSitePose;
                                 poseXY thisRobotPose = coalList.at(coalID).coalMembers.at(robIndx).taskSitePose;
+
+                                double robotRadius2 = robotsList.at(_robIndx).radius;
                                 double dist = sqrt((oldRobotPose.X - thisRobotPose.X)*(oldRobotPose.X - thisRobotPose.X) + (oldRobotPose.Y - thisRobotPose.Y)*(oldRobotPose.Y - thisRobotPose.Y));
-                                if(dist < coalList.at(coalID).coalMembers.at(robIndx).radius + coalList.at(coalID).coalMembers.at(_robIndx).radius + distThreshold4GeneratingPoses){
+                                if(dist < robotRadius + robotRadius2 + distThreshold4GeneratingPoses){
                                     distOK = 0;
                                     break;
                                 }
@@ -1823,8 +1826,26 @@ void RosThread::sendCmd2Leaders(int cmdType, QVector <int> coalIDList)
                 msg.leaderRobotID.push_back(leaderID);
 
                 msg.message.push_back("1");
+            }
+        }
 
+
+        for(int i=0;i<robotsList.size();i++){
+            bool flag = false;
+            for(int coalPrevIndx = 0; coalPrevIndx <coalListPrev.size();coalPrevIndx++){
+                if(coalList[robotsList[i].coalID].coalLeaderID == coalListPrev[coalPrevIndx].coalLeaderID){
+                    for(int j = 0;j < coalListPrev[coalPrevIndx].coalMembers.size(); j++){
+                        if(coalListPrev[coalPrevIndx].coalMembers[j].robotID == robotsList[i].robotID){
+                            flag = true;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            if(!flag){
                 isLeaderChanged = true;
+                break;
             }
         }
     }
