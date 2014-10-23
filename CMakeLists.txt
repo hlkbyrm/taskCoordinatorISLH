@@ -28,7 +28,7 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
 include_directories(./src)
 #include_directories(/home/fuerte_workspace/sandbox)
-SET(qt_HEADERS src/rosThread.h  )
+SET(qt_HEADERS src/rosThread.h src/placerobots.h )
 SET(qt_SOURCES src/rosThread.cpp)
 QT4_WRAP_CPP(qt_HEADERS_MOC ${qt_HEADERS})
 qt4_automoc(${qt_SOURCES})

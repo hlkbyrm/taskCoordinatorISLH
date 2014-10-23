@@ -1717,10 +1717,10 @@ void RosThread::generatePoses(int coalID, int poseType)
                         {
                             for(int _robIndx=0; _robIndx < robIndx; _robIndx++){
                                 poseXY oldRobotPose = coalList.at(coalID).coalMembers.at(_robIndx).taskSitePose;
-                                poseXY thisRobotPose = coalList.at(coalID).coalMembers.at(robIndx).taskSitePose;
+                                //poseXY thisRobotPose = coalList.at(coalID).coalMembers.at(robIndx).taskSitePose;
 
                                 double robotRadius2 = robotsList.at(_robIndx).radius;
-                                double dist = sqrt((oldRobotPose.X - thisRobotPose.X)*(oldRobotPose.X - thisRobotPose.X) + (oldRobotPose.Y - thisRobotPose.Y)*(oldRobotPose.Y - thisRobotPose.Y));
+                                double dist = sqrt((oldRobotPose.X - robX)*(oldRobotPose.X - robX) + (oldRobotPose.Y - robY)*(oldRobotPose.Y - robY));
                                 if(dist < robotRadius + robotRadius2 + distThreshold4GeneratingPoses){
                                     distOK = 0;
                                     break;
@@ -1791,6 +1791,162 @@ void RosThread::generatePoses(int coalID, int poseType)
         pubTaskInfo2Monitor(taskProp(waitingTasks.at(taskID)));
     }
 
+}
+
+void RosThread::generatePoses2(int coalID, int poseType){
+    if(poseType == GOAL_POSE){
+        int numOfMem = coalList.at(coalID).coalMembers.size();
+
+        QVector<Robot> robots;
+        foreach(robotProp r,coalList.at(coalID).coalMembers){
+            double radius = robotsList[r.robotID - 1].radius;
+
+            robots.push_back(Robot(Point(0,0),radius + distThreshold4GeneratingPoses / 2,r.robotID));
+        }
+
+        QVector<Obstacle> obstacles;
+        // other robots' goal pose as obstacle
+        foreach(robotProp r,robotsList){
+            if(r.inGoalPose == -1) continue;
+
+            bool flag = false;
+            foreach(robotProp _r,coalList.at(coalID).coalMembers){
+                if(r.robotID == _r.robotID){
+                    flag = true;
+                    break;;
+                }
+            }
+            if(flag) continue;
+
+            obstacles.push_back(Obstacle(Point(r.goalPose.X,r.goalPose.Y), r.radius + distThreshold4GeneratingPoses / 2));
+        }
+
+        // tasks' site pose as obstacle
+        foreach(taskProp t,handlingTasks)
+            obstacles.push_back(Obstacle(Point(t.pose.X,t.pose.Y), t.taskSiteRadius + distThreshold4GeneratingPoses / 2));
+        foreach(taskProp t,waitingTasks)
+            obstacles.push_back(Obstacle(Point(t.pose.X,t.pose.Y), t.taskSiteRadius + distThreshold4GeneratingPoses / 2));
+
+        // set an origin point for goal poses
+        bool isOK = false;
+        Point p(0,0);
+        while(!isOK){
+            isOK = true;
+
+            double radius = rand() / (RAND_MAX + 1.0) * (missionParams.ro - distThreshold4GeneratingPoses);
+            double alpha = rand() / (RAND_MAX + 1.0) * (2 * M_PI);
+            p = Point(radius * cos(alpha),radius * sin(alpha));
+
+            foreach(taskProp t,handlingTasks){
+                if(sqrt((t.pose.X - p.x) * (t.pose.X - p.x) + (t.pose.Y - p.y) * (t.pose.Y - p.y)) < t.taskSiteRadius){
+                    isOK = false;
+                    break;
+                }
+            }
+        }
+
+        PlaceRobots pl(robots,obstacles,p,numOfMem*missionParams.targetSiteRadius,missionParams.ro);
+        pl.startCalculating();
+
+        for(int robIndx = 0;robIndx<coalList.at(coalID).coalMembers.size();robIndx++){
+            Robot closest;
+            robotProp r = robotsList[coalList.at(coalID).coalMembers.at(robIndx).robotID - 1];
+
+            double minDist = missionParams.ro * 999;
+            foreach(Robot _r,pl.robots){
+                if(_r.robotID == -1) continue;
+
+                double dist = sqrt((_r.center.x - r.pose.X) * (_r.center.x - r.pose.X) +
+                                                (_r.center.y - r.pose.Y) * (_r.center.y - r.pose.Y));
+                if(dist < minDist){
+                    closest = _r;
+                    minDist = dist;
+                }
+            }
+
+            for(int i=0;i<pl.robots.size();i++){
+                if(pl.robots[i].robotID == closest.robotID){
+                    pl.robots[i].robotID = -1;
+                    break;
+                }
+            }
+
+            robotsList[r.robotID-1].goalPose.X = closest.center.x;
+            robotsList[r.robotID-1].goalPose.Y = closest.center.y;
+            robotsList[r.robotID-1].inTaskSite = -1;
+            robotsList[r.robotID-1].inGoalPose = 0;
+            coalList[coalID].coalMembers[robIndx].goalPose.X = closest.center.x;
+            coalList[coalID].coalMembers[robIndx].goalPose.Y = closest.center.y;
+            coalList[coalID].coalMembers[robIndx].inTaskSite = -1;
+            coalList[coalID].coalMembers[robIndx].inGoalPose = 0;
+        }
+    }
+    else if(poseType == TASK_SITE_POSE){
+        int taskID = -1;
+        for(int wti = 0; wti < waitingTasks.size();wti++)
+        {
+            if (QString::compare(waitingTasks.at(wti).taskUUID, coalList.at(coalID).currentTaskUUID,Qt::CaseInsensitive) == 0)
+            {
+               taskID = wti;
+               break;
+            }
+        }
+
+        int numOfMem = coalList.at(coalID).coalMembers.size();
+
+        QVector<Robot> robots;
+        foreach(robotProp r,coalList.at(coalID).coalMembers){
+            double radius = robotsList[r.robotID - 1].radius;
+
+            robots.push_back(Robot(Point(0,0),radius + distThreshold4GeneratingPoses / 2,r.robotID));
+        }
+
+        QVector<Obstacle> obstacles;
+        // tasks' site pose as obstacle
+        foreach(taskProp t,handlingTasks)
+            obstacles.push_back(Obstacle(Point(t.pose.X,t.pose.Y), t.taskSiteRadius + distThreshold4GeneratingPoses / 2));
+        foreach(taskProp t,waitingTasks)
+            obstacles.push_back(Obstacle(Point(t.pose.X,t.pose.Y), t.taskSiteRadius + distThreshold4GeneratingPoses / 2));
+
+        // set an origin point for goal poses
+        Point p(waitingTasks.at(taskID).pose.X,waitingTasks.at(taskID).pose.Y);
+
+        PlaceRobots pl(robots,obstacles,p,numOfMem*missionParams.targetSiteRadius,missionParams.ro);
+        pl.startCalculating();
+
+        for(int robIndx = 0;robIndx<coalList.at(coalID).coalMembers.size();robIndx++){
+            Robot closest;
+            robotProp r = robotsList[coalList.at(coalID).coalMembers.at(robIndx).robotID - 1];
+
+            double minDist = missionParams.ro * 999;
+            foreach(Robot _r,pl.robots){
+                if(_r.robotID == -1) continue;
+
+                double dist = sqrt((_r.center.x - r.pose.X) * (_r.center.x - r.pose.X) +
+                                                (_r.center.y - r.pose.Y) * (_r.center.y - r.pose.Y));
+                if(dist < minDist){
+                    closest = _r;
+                    minDist = dist;
+                }
+            }
+
+            for(int i=0;i<pl.robots.size();i++){
+                if(pl.robots[i].robotID == closest.robotID){
+                    pl.robots[i].robotID = -1;
+                    break;
+                }
+            }
+
+            robotsList[r.robotID-1].taskSitePose.X = closest.center.x;
+            robotsList[r.robotID-1].taskSitePose.Y = closest.center.y;
+            robotsList[r.robotID-1].inTaskSite = 0;
+            robotsList[r.robotID-1].inGoalPose = -1;
+            coalList[coalID].coalMembers[robIndx].taskSitePose.X = closest.center.x;
+            coalList[coalID].coalMembers[robIndx].taskSitePose.Y = closest.center.y;
+            coalList[coalID].coalMembers[robIndx].inTaskSite = 0;
+            coalList[coalID].coalMembers[robIndx].inGoalPose = -1;
+        }
+    }
 }
 
 

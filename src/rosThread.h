@@ -12,6 +12,7 @@
 #include <ISLH_msgs/taskInfo2MonitorMessage.h>
 #include "std_msgs/UInt8.h"
 #include "std_msgs/Int8MultiArray.h"
+#include "placerobots.h"
 
 /*
 enum TaskInfoType
@@ -214,7 +215,8 @@ private:
 
     QVector <double> calcCoalTotalResources(QVector <robotProp> coalMembers);
 
-    void generatePoses(int coalID, int poseType);
+    void generatePoses (int coalID, int poseType);
+    void generatePoses2(int coalID, int poseType);
 
     bool readConfigFile(QString filename);
 
