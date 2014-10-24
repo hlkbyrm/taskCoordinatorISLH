@@ -202,6 +202,12 @@ void RosThread::handleStartMission(std_msgs::UInt8 msg)
         {
             missionParams.startMission = true;
             ct.start();
+
+            std_msgs::Int8MultiArray msgLeaderID2Monitor;
+            for(int robIndx=0; robIndx < robotsList.size(); robIndx++){
+                msgLeaderID2Monitor.data.push_back(coalList.at(robotsList.at(robIndx).coalID).coalLeaderID);
+            }
+            leaderIDInfo2MonitorPub.publish(msgLeaderID2Monitor);
         }
         else
         {
@@ -1377,6 +1383,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
     }
     else if ( (infoMsg.infoTypeID == INFO_L2C_SPLITTING) || (infoMsg.infoTypeID == INFO_L2C_SPLITTING_AND_LEADER_CHANGED) )
     {
+        coalListHist.append(QVector <coalProp>(coalList));
+
         qDebug() << "splitting" << infoMsg.senderRobotID;
 
         QString splittingRobotIDStr = QString::fromStdString(infoMsg.extraMsg);
@@ -1401,7 +1409,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
                 for(int srid = 0; srid < splittingRobotIDList.size();srid++)
                 {
                     if (splittingRobotIDList.at(srid).toUInt() == coalList.at(cid).coalMembers.at(rid).robotID)
-                    {                       
+                    {
+                        qDebug()<<"splitting part1";
                         robotProp splittedRobot = coalList.at(cid).coalMembers.at(rid);
                         coalProp singletonCoal;
                         singletonCoal.coalLeaderID = splittedRobot.robotID;
@@ -1409,21 +1418,35 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
                         singletonCoal.status = CS_WAITING_GOAL_POSE;                        
                         singletonCoal.coalTotalResources = singletonCoal.coalMembers.at(0).resources;
 
+                        qDebug()<<"splitting part2";
+
                         coalList.append(singletonCoal);
+                        coalList[cid].coalMembers.remove(rid);
+                        coalList[cid].coalTotalResources = QVector <double>(calcCoalTotalResources(coalList.at(cid).coalMembers));
 
-                        coalList[cid].coalMembers.remove(rid);                       
+                        qDebug()<<"splitting part3";
+                        robotsList[splittedRobot.robotID-1].coalID = coalList.size()-1;
 
+                        qDebug()<<"splitting part4";
                         splittingRobotIDList.removeAt(srid);
 
                         if (infoMsg.infoTypeID == INFO_L2C_SPLITTING_AND_LEADER_CHANGED)
                         {
+                            qDebug()<<"splitting part5";
                             //Assign a new coalition leader ID
-                            coalList[cid].coalLeaderID = newCoalLeaderID;
+                            coalList[cid].coalLeaderID = newCoalLeaderID;                                                       
                         }
                     }
                 }
             }
         }
+
+        qDebug()<<"splitting part6";
+        std_msgs::Int8MultiArray msgLeaderID2Monitor;
+        for(int robIndx=0; robIndx < robotsList.size(); robIndx++){
+            msgLeaderID2Monitor.data.push_back(coalList.at(robotsList.at(robIndx).coalID).coalLeaderID);
+        }
+       leaderIDInfo2MonitorPub.publish(msgLeaderID2Monitor);
 
     }
     else if (infoMsg.infoTypeID == INFO_L2C_WAITING_GOAL_POSE)
@@ -1444,14 +1467,19 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
         }
 
         if (coalID==-1)
-            qDebug()<< "robot "<<leaderRobotID << " is not a coalition leader !!! ";
+        {
+            qDebug()<< "robot "<<leaderRobotID << " is no longer a coalition leader. Hence I am ignoring the goal pose request. ";
+        }
+        else
+        {
 
-        generatePoses(coalID, GOAL_POSE);
+            generatePoses(coalID, GOAL_POSE);
 
-        QVector <int> coalIDListTmp;
-        coalIDListTmp.append(coalID);
+            QVector <int> coalIDListTmp;
+            coalIDListTmp.append(coalID);
 
-        sendCmd2Leaders(CMD_C2L_NEW_GOAL_POSES, coalIDListTmp);
+            sendCmd2Leaders(CMD_C2L_NEW_GOAL_POSES, coalIDListTmp);
+        }
 
     }
 
@@ -1504,7 +1532,7 @@ void RosThread::generatePoses(int coalID, int poseType)
                         robX = goalX + ((rand()/ (RAND_MAX + 1.0)) * (2*goalSiteRadius)) - goalSiteRadius;
                         robY = goalY + ((rand()/ (RAND_MAX + 1.0)) * (2*goalSiteRadius)) - goalSiteRadius;
 
-                        if (sqrt(robX*robX + robY*robY) <= (missionParams.ro-robotRadius))
+                        if (sqrt(robX*robX + robY*robY) <= (missionParams.ro-3*robotRadius))
                         {
                             int distOK = 1;
 
