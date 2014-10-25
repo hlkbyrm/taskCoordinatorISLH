@@ -1136,7 +1136,6 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
             newTask.status = TS_NOT_ASSIGNED;
             newTask.responsibleUnit = -1;
 
-            waitingTasks.append(newTask);
 
             for(int i = 0; i < coalList.size();i++)
             {
@@ -1145,9 +1144,14 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
                     coalList[i].status = CS_WAITING_TASK_RESPONSE_FROM_COORDINATOR;
                     coalList[i].currentTaskUUID = QString::fromStdString(infoMsg.taskUUID);
                     qDebug()<<"coalition leader was found.";
+
+                    newTask.responsibleUnit = coalList.at(i).coalLeaderID;
+
                     break;
                 }
             }
+
+            waitingTasks.append(newTask);
         }
         else // INFO_L2C_WAITING_TASK_SITE_POSE
         {
@@ -1415,12 +1419,13 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
                         coalProp singletonCoal;
                         singletonCoal.coalLeaderID = splittedRobot.robotID;
                         singletonCoal.coalMembers.append(splittedRobot);
-                        singletonCoal.status = CS_WAITING_GOAL_POSE;                        
+                        singletonCoal.status = CS_IDLE;
                         singletonCoal.coalTotalResources = singletonCoal.coalMembers.at(0).resources;
 
                         qDebug()<<"splitting part2";
 
                         coalList.append(singletonCoal);
+
                         coalList[cid].coalMembers.remove(rid);
                         coalList[cid].coalTotalResources = QVector <double>(calcCoalTotalResources(coalList.at(cid).coalMembers));
 
@@ -1438,6 +1443,13 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
                         }
 
                         coalList[cid].status = CS_HANDLING;
+
+                        // send goal pose to the newly added singleton coaltion
+                        generatePoses(coalList.size()-1, GOAL_POSE);
+                        QVector <int> coalIDListTmp;
+                        coalIDListTmp.append(coalList.size()-1);
+
+                        sendCmd2Leaders(CMD_C2L_NEW_GOAL_POSES, coalIDListTmp);
                     }
                 }
             }
