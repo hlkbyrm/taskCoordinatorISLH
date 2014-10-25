@@ -1436,6 +1436,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
                             //Assign a new coalition leader ID
                             coalList[cid].coalLeaderID = newCoalLeaderID;                                                       
                         }
+
+                        coalList[cid].status = CS_HANDLING;
                     }
                 }
             }
