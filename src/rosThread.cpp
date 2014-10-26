@@ -26,6 +26,8 @@ void RosThread::work()
 
     if(!ros::ok()){
 
+        qDebug() << "quitting";
+
         emit this->rosFinished();
 
         return;
@@ -56,7 +58,7 @@ void RosThread::work()
 
     messageTaskInfoFromLeaderSub = n.subscribe("messageDecoderISLH/taskInfoFromLeader",queueSize,&RosThread::handleTaskInfoFromLeader, this);
 
-    messagePoseListSub = n.subscribe("localizationISLH/poseList",queueSize,&RosThread::handlePoseList, this);
+    messagePoseListSub = n.subscribe("localizationISLH/poseList",1,&RosThread::handlePoseList, this);
 
     messageStartMissionSub = n.subscribe("monitoringISLH/startMission", queueSize,&RosThread::handleStartMission, this);
 
@@ -453,6 +455,7 @@ void RosThread::manageCoalitions()
             {
                 qDebug()<<"coalID "<<coalID;
                 generatePoses(coalID, TASK_SITE_POSE);
+
                 coalList[coalID].status = CS_SUCCORING;
 
                 capableCoalIDListTmp2.append(coalID);
@@ -1093,6 +1096,16 @@ void RosThread::handlePoseList(ISLH_msgs::robotPositions robotPoseListMsg)
     {
         robotsList[robID].pose.X = robotPoseListMsg.positions.at(robID).x;
         robotsList[robID].pose.Y = robotPoseListMsg.positions.at(robID).y;
+
+    }
+
+    for(int coalID = 0; coalID < coalList.size(); coalID++)
+    {
+        for(int robIndx = 0; robIndx < coalList[coalID].coalMembers.size(); robIndx++)
+        {
+            coalList[coalID].coalMembers[robIndx].pose.X = robotsList[coalList[coalID].coalMembers[robIndx].robotID-1].pose.X;
+            coalList[coalID].coalMembers[robIndx].pose.Y = robotsList[coalList[coalID].coalMembers[robIndx].robotID-1].pose.Y;
+        }
     }
 }
 
@@ -1446,6 +1459,7 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
 
                         // send goal pose to the newly added singleton coaltion
                         generatePoses(coalList.size()-1, GOAL_POSE);
+
                         QVector <int> coalIDListTmp;
                         coalIDListTmp.append(coalList.size()-1);
 
@@ -1577,14 +1591,16 @@ void RosThread::generatePoses(int coalID, int poseType)
                             {
                                 for(int robIndx2=0; robIndx2 < robIndx; robIndx2++)
                                 {
-                                    if (robotsList.at(robIndx2).inGoalPose != -1)
-                                        // robIndx2 has an assigned goal pose?
+                                    int robotID2 = coalList.at(coalID).coalMembers.at(robIndx2).robotID;
+
+                                    if (robotsList.at(robotID2-1).inGoalPose != -1)
+                                        // robotID2 has an assigned goal pose?
                                     {
-                                        double xTmp = coalList.at(coalID).coalMembers.at(robIndx2).goalPose.X;
-                                        double yTmp = coalList.at(coalID).coalMembers.at(robIndx2).goalPose.Y;
+                                        double xTmp = robotsList.at(robotID2-1).goalPose.X;//coalList.at(coalID).coalMembers.at(robIndx2).goalPose.X;
+                                        double yTmp = robotsList.at(robotID2-1).goalPose.Y;//coalList.at(coalID).coalMembers.at(robIndx2).goalPose.Y;
 
                                         //double robotRadius2 = coalList.at(coalID).coalMembers.at(robIndx2).radius;
-                                        double robotRadius2 = robotsList.at(coalList.at(coalID).coalMembers.at(robIndx2).robotID-1).radius;
+                                        double robotRadius2 = robotsList.at(robotID2-1).radius;
 
                                         if ( sqrt((robX-xTmp)*(robX-xTmp) + (robY-yTmp)*(robY-yTmp)) <= (robotRadius + robotRadius2 + distThreshold4GeneratingPoses) )
                                         {
@@ -1659,6 +1675,8 @@ void RosThread::generatePoses(int coalID, int poseType)
             }
             if(isAllDone) break;
         }
+
+        matchCoalitionWithTarget(coalID);
     }
     else if (poseType == TASK_SITE_POSE)
     {
@@ -1728,7 +1746,7 @@ void RosThread::generatePoses(int coalID, int poseType)
                     robX = taskPoseX + ((rand()/ (RAND_MAX + 1.0)) * (2*(waitingTasks.at(taskID).taskSiteRadius - robotRadius))) - (waitingTasks.at(taskID).taskSiteRadius - robotRadius);
                     robY = taskPoseY + ((rand()/ (RAND_MAX + 1.0)) * (2*(waitingTasks.at(taskID).taskSiteRadius - robotRadius))) - (waitingTasks.at(taskID).taskSiteRadius - robotRadius);
 
-                    if (sqrt(robX*robX + robY*robY) <= (missionParams.ro-robotRadius))
+                    if (sqrt(robX*robX + robY*robY) <= (missionParams.ro-3*robotRadius))
                     {
                         int distOK = 1;
 
@@ -1830,6 +1848,9 @@ void RosThread::generatePoses(int coalID, int poseType)
             }
             if(done) break;
         }
+
+        matchCoalitionWithTarget(coalID);
+
         pubTaskInfo2Monitor(taskProp(waitingTasks.at(taskID)));
     }
 
@@ -2269,6 +2290,175 @@ void RosThread::pubTaskInfo2Monitor(taskProp task)
     taskInfoMsg.taskSiteRadius = task.taskSiteRadius;
 
     taskInfo2MonitorPub.publish(taskInfoMsg);
+}
+
+
+void RosThread::matchCoalitionWithTarget(int coalID){
+
+    QVector<robotProp> robots;
+
+    for(int i=0;i<coalList[coalID].coalMembers.size();i++)
+
+        robots.push_back(robotsList[coalList[coalID].coalMembers[i].robotID-1]);
+
+
+
+    QVector<poseXY> targets = matchRobotWithTarget(robots); // I sent robots instead of coalMembers because I need robotPose
+
+    if(coalList[coalID].coalMembers[0].inGoalPose != -1){
+
+        for(int i = 0; i < targets.size(); i++){
+
+            coalList[coalID].coalMembers[i].goalPose = targets[i];
+
+            int robotID = coalList[coalID].coalMembers[i].robotID;
+
+            robotsList[robotID - 1].goalPose = targets[i];
+
+        }
+
+    } else{
+
+        for(int i = 0; i < targets.size(); i++){
+
+            coalList[coalID].coalMembers[i].taskSitePose = targets[i];
+
+            int robotID = coalList[coalID].coalMembers[i].robotID;
+
+            robotsList[robotID - 1].taskSitePose = targets[i];
+
+        }
+
+    }
+
+}
+
+bool RosThread::is_line_segment_intersects(poseXY l1p1,poseXY l1p2,poseXY l2p1,poseXY l2p2){
+
+    double s1_x, s1_y, s2_x, s2_y;
+
+    s1_x = l1p2.X - l1p1.X;
+
+    s1_y = l1p2.Y - l1p1.Y;
+
+    s2_x = l2p2.X - l2p1.X;
+
+    s2_y = l2p2.Y - l2p1.Y;
+
+    if(-s2_x * s1_y + s1_x * s2_y == 0 || -s2_x * s1_y + s1_x * s2_y == 0)
+
+        return true; // Probably on the edge
+
+    double s, t;
+
+    s = (-s1_y * (l1p1.X - l2p1.X) + s1_x * (l1p1.Y - l2p1.Y)) / (-s2_x * s1_y + s1_x * s2_y);
+
+    t = ( s2_x * (l1p1.Y - l2p1.Y) - s2_y * (l1p1.X - l2p1.X)) / (-s2_x * s1_y + s1_x * s2_y);
+
+    if (s >= 0 && s <= 1 && t >= 0 && t <= 1)
+
+        // Collision detected
+
+        return true;
+
+    return false; // No collision
+
+}
+
+double RosThread::dist(poseXY p1, poseXY p2){
+
+    return sqrt((p1.X - p2.X) * (p1.X - p2.X) + (p1.Y - p2.Y) * (p1.Y - p2.Y));
+
+}
+
+QVector<poseXY> RosThread::matchRobotWithTarget(QVector<robotProp> robots){
+
+    QVector<poseXY> targets;
+
+    foreach(robotProp r,robots){
+
+        if(r.inGoalPose != -1)
+
+            targets.push_back(r.goalPose);
+
+        else
+
+            targets.push_back(r.taskSitePose);
+
+    }
+
+    QVector<int> permutations;
+
+    int factorial = 1;
+
+    for(int i=0;i<targets.size();i++){
+
+        permutations.push_back(i);
+
+        factorial *= (i+1);
+
+    }
+
+    double min_intersection_min_dist = missionParams.ro * targets.size(); // Big enough
+
+    int min_intersection = targets.size();                                // Big enough
+
+    QVector<poseXY> min_intersection_targets(targets);
+
+    for(int j = 0; j < factorial; j++){
+
+        int intersection_count = 0;
+
+        for(int i = 0; i < targets.size(); i++)
+
+            for(int k = i + 1; k < targets.size(); k++)
+
+                if(is_line_segment_intersects(robots[i].pose, targets[permutations[i]],
+
+                                              robots[k].pose, targets[permutations[k]]))
+
+                    intersection_count++;
+
+        if(intersection_count < min_intersection){
+
+            min_intersection = intersection_count;
+
+            min_intersection_targets.clear();
+
+            for(int i = 0; i < targets.size(); i++)
+
+                min_intersection_targets.push_back(targets[permutations[i]]);
+
+        }
+
+        if(intersection_count == min_intersection){
+
+            double sum_of_dist = 0.0;
+
+            for(int i=0;i<targets.size();i++)
+
+                sum_of_dist += dist(robots[i].pose, targets[permutations[i]]);
+
+            if(sum_of_dist < min_intersection_min_dist){
+
+                min_intersection_min_dist = sum_of_dist;
+
+                min_intersection_targets.clear();
+
+                for(int i = 0; i < targets.size(); i++)
+
+                    min_intersection_targets.push_back(targets[permutations[i]]);
+
+            }
+
+        }
+
+        std::next_permutation(permutations.begin(),permutations.end());
+
+    }
+
+    return min_intersection_targets;
+
 }
 
 QVector <QVector <QVector <uint> > > RosThread::generatePartitions(QVector <uint> robotList)

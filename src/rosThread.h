@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QTime>
 #include <QtCore/QString>
+#include <algorithm>
 #include <ISLH_msgs/taskInfoFromLeaderMessage.h>
 #include <ISLH_msgs/cmd2LeadersMessage.h>
 #include <ISLH_msgs/robotPositions.h>
@@ -218,6 +219,11 @@ private:
     void generatePoses (int coalID, int poseType);
     void generatePoses2(int coalID, int poseType);
 
+    void matchCoalitionWithTarget(int coalID);
+    bool is_line_segment_intersects(poseXY l1p1,poseXY l1p2,poseXY l2p1,poseXY l2p2);
+    double dist(poseXY p1, poseXY p2);
+    QVector<poseXY> matchRobotWithTarget(QVector<robotProp> robots);
+
     bool readConfigFile(QString filename);
 
 
@@ -227,6 +233,8 @@ private:
     void taskCheckingTimerCallback(const ros::TimerEvent&);
 
     bool startChecking;
+
+
 
 public slots:
     void work();
