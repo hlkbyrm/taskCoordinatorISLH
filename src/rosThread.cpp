@@ -358,7 +358,10 @@ void RosThread::manageCoalitions()
                         }
                         else
                         {
-                            _coalList[coalIndx].currentTaskUUID = "NONE";
+                            if ( (_coalList.at(coalIndx).status != CS_SUCCORING) && (_coalList.at(coalIndx).status != CS_HANDLING) )
+                            {
+                                _coalList[coalIndx].currentTaskUUID = "NONE";
+                            }
                         }
 
                         break;
@@ -1447,6 +1450,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
 
                         qDebug()<<"splitting part4";
                         splittingRobotIDList.removeAt(srid);
+
+                        srid = srid -1;
 
                         if (infoMsg.infoTypeID == INFO_L2C_SPLITTING_AND_LEADER_CHANGED)
                         {
