@@ -551,6 +551,7 @@ void RosThread::manageCoalitions()
 void RosThread::runCFG(QVector <int> wTaskIDList)//, QVector <int> availCoalIDList)
 {
     int changeOK = 1;
+    int totalChangeNum = 0;
 
     while(changeOK==1)
     {
@@ -791,6 +792,12 @@ void RosThread::runCFG(QVector <int> wTaskIDList)//, QVector <int> availCoalIDLi
 
         if ( (changeMerge+changeSplit) == 0 )
         {
+            changeOK = 0;
+        }
+
+        totalChangeNum++;
+
+        if(totalChangeNum > 100){
             changeOK = 0;
         }
 
