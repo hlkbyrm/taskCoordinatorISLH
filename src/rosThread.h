@@ -226,6 +226,8 @@ private:
 
     bool readConfigFile(QString filename);
 
+    void writeNumOfIterationsToFile(int totNumOfMain, int totNumOfMerging, int totNumOfSplitting);
+
 
     ros::Timer ct; // timer for checking waitingTasks
 

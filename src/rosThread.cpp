@@ -304,12 +304,32 @@ void RosThread::manageCoalitions()
         if (wTaskIDList.size()>0)
         {
 
+            qDebug()<<"------------------------------------------";
+            qDebug()<<"list of coalitions before  runCFG";
+            for(int coalIndx = 0; coalIndx < coalList.size(); coalIndx++)
+            {
+                qDebug()<<"coalID: "<<coalIndx << "coal size: "<<coalList.at(coalIndx).coalMembers.size() <<" coal status: "<<coalList.at(coalIndx).status <<"leader robotID"<<coalList.at(coalIndx).coalLeaderID << " assigned taskUUID: " <<coalList.at(coalIndx).currentTaskUUID;
+                qDebug()<<"Members of coalition "<<coalIndx;
+                for(int robIndx = 0; robIndx<coalList.at(coalIndx).coalMembers.size(); robIndx++)
+                    qDebug()<<"robot "<<coalList.at(coalIndx).coalMembers.at(robIndx).robotID<<" coalID:"<<robotsList.at(coalList.at(coalIndx).coalMembers.at(robIndx).robotID-1).coalID;
+            }
+            qDebug()<<"------------------------------------------";
+
             qDebug() << "available robots for waiting tasks";
 
             _coalList = QVector <coalProp>(coalList);
             _waitingTasks = QVector <taskProp>(waitingTasks);
 
             coalListHist.append(QVector <coalProp>(coalList));
+
+            qDebug()<<"All waiting tasks before runCFG";
+            for(int wTID = 0; wTID < waitingTasks.size();wTID++)
+            {
+                qDebug()<<"taskUUID: "<<waitingTasks.at(wTID).taskUUID<<" status: "<<waitingTasks.at(wTID).status<<" resposible unit: "<<waitingTasks.at(wTID).responsibleUnit;
+
+                if (waitingTasks.at(wTID).responsibleUnit>-1)
+                    qDebug()<<"responsible coalition ID: "<<robotsList.at(waitingTasks.at(wTID).responsibleUnit-1).coalID;
+            }           
 
             // .................................//
             // run the coalition formation game //
@@ -324,7 +344,7 @@ void RosThread::manageCoalitions()
             qDebug()<<"_coalList after runCFG";
             for(int coalIndx = 0; coalIndx < _coalList.size(); coalIndx++)
             {
-                qDebug()<<"coalID: "<<coalIndx << "coal size: "<<_coalList.at(coalIndx).coalMembers.size() << "assigned taskUUID: " <<_coalList.at(coalIndx).currentTaskUUID;
+                qDebug()<<"coalID: "<<coalIndx << "coal size: "<<_coalList.at(coalIndx).coalMembers.size() <<" coal status: "<<_coalList.at(coalIndx).status << " assigned taskUUID: " <<_coalList.at(coalIndx).currentTaskUUID;
 
             }
 
@@ -355,25 +375,43 @@ void RosThread::manageCoalitions()
                             //  resources for the given waiting task "_waitingTasks.at(wTaskID).taskUUID"
                             capableCoalIDListTmp.append(coalIndx);
                             qDebug()<<"coalID: "<<coalIndx << "coal size: "<<_coalList.at(coalIndx).coalMembers.size() << "assigned taskUUID: " <<_coalList.at(coalIndx).currentTaskUUID;
+
+                            // update waitingTasks based on _waitingTasks
+                            qDebug()<<"Assigned task-> taskUUID: "<<_waitingTasks[wTaskID].taskUUID<<" status: "<<_waitingTasks[wTaskID].status<<" responsibleUnit: "<<_waitingTasks[wTaskID].responsibleUnit;
+                            waitingTasks[wTaskID].status =  TS_WAITING_TASK_POSE;
+                            waitingTasks[wTaskID].responsibleUnit = _waitingTasks[wTaskID].responsibleUnit;
                         }
                         else
                         {
                             if ( (_coalList.at(coalIndx).status != CS_SUCCORING) && (_coalList.at(coalIndx).status != CS_HANDLING) )
                             {
                                 _coalList[coalIndx].currentTaskUUID = "NONE";
-                            }
-                        }
+                                qDebug()<<"not sufficient resource for waiting taskUUID "<< _waitingTasks.at(wTaskID).taskUUID<<" coalLeader: "<<_coalList.at(coalIndx).coalLeaderID;
+                            }                            
+                        }                        
 
                         break;
                     }
-                }
+                    else
+                    {
+
+                    }
+                }              
             }
+
+            qDebug()<<"All waiting tasks after runCFG";
+            for(int wTID = 0; wTID < waitingTasks.size();wTID++)
+                qDebug()<<"taskUUID: "<<waitingTasks.at(wTID).taskUUID<<" status: "<<waitingTasks.at(wTID).status<<" responsible unit: "<<waitingTasks.at(wTID).responsibleUnit;
+
 
             // determining the new partition "_coalListTmp" considering the result of CGG and the current partition
 
             // first adding the capable coalitions to  _coalListTmp
             QVector <coalProp> _coalListTmp;
-            QVector <int> newCoalIDListTmp(missionParams.numOfRobots, -1);
+            QVector <int> newCoalIDListTmp;
+            newCoalIDListTmp.resize(missionParams.numOfRobots);
+            for(int i=0;i<missionParams.numOfRobots;i++)
+                newCoalIDListTmp[i]=-1;
 
             for(int i = 0; i < capableCoalIDListTmp.size(); i++)
             {
@@ -399,52 +437,70 @@ void RosThread::manageCoalitions()
             //       coalitions generated by CFG) from the non-capable coalitions
             for(int coalIndx = 0; coalIndx < coalList.size(); coalIndx++)
             {
-                QVector <int> coalMembersToBeRemoved;
-                for(int robIndx = 0; robIndx < coalList.at(coalIndx).coalMembers.size(); robIndx++)
-                {
-                    int robotID = coalList.at(coalIndx).coalMembers.at(robIndx).robotID;
-                    if (newCoalIDListTmp.at(robotID-1)>-1)
-                        coalMembersToBeRemoved.append(robotID);
-                }
-
-                if (coalList.at(coalIndx).coalMembers.size()> coalMembersToBeRemoved.size())
-                {
-                    QVector <robotProp> coalMembersTmp = QVector <robotProp>(coalList.at(coalIndx).coalMembers);
-                    for(int i = 0; i < coalMembersToBeRemoved.size(); i++)
+                 if ( (coalList.at(coalIndx).status != CS_SUCCORING) && (coalList.at(coalIndx).status != CS_HANDLING))
+                 {
+                    QVector <int> coalMembersToBeRemoved;
+                    for(int robIndx = 0; robIndx < coalList.at(coalIndx).coalMembers.size(); robIndx++)
                     {
-                        for(int robIndx = 0; robIndx<coalMembersTmp.size(); robIndx++)
+                        int robotID = coalList.at(coalIndx).coalMembers.at(robIndx).robotID;
+                        if (newCoalIDListTmp.at(robotID-1)>-1)
+                            coalMembersToBeRemoved.append(robotID);
+                    }
+
+                    if (coalList.at(coalIndx).coalMembers.size()> coalMembersToBeRemoved.size())
+                    {
+                        QVector <robotProp> coalMembersTmp = QVector <robotProp>(coalList.at(coalIndx).coalMembers);
+                        for(int i = 0; i < coalMembersToBeRemoved.size(); i++)
                         {
-                            if (coalMembersTmp.at(robIndx).robotID == coalMembersToBeRemoved.at(i))
+                            for(int robIndx = 0; robIndx<coalMembersTmp.size(); robIndx++)
                             {
-                                coalMembersTmp.remove(robIndx);
-                                break;
+                                if (coalMembersTmp.at(robIndx).robotID == coalMembersToBeRemoved.at(i))
+                                {
+                                    coalMembersTmp.remove(robIndx);
+                                    break;
+                                }
                             }
                         }
+
+                        coalProp coalTmp;
+
+                        int minRobotID = 9999;
+                        for(int robIndx = 0; robIndx<coalMembersTmp.size(); robIndx++)
+                        {
+                            if (coalMembersTmp.at(robIndx).robotID < minRobotID)
+                                minRobotID = coalMembersTmp.at(robIndx).robotID;
+
+                            coalMembersTmp[robIndx].coalID = newCoalID;
+
+                            robotsList[coalMembersTmp.at(robIndx).robotID-1].coalID = newCoalID;
+                        }
+
+                        coalTmp.coalLeaderID = minRobotID;
+                        coalTmp.coalMembers  = QVector <robotProp>(coalMembersTmp);
+                        coalTmp.coalTotalResources = QVector <double>(calcCoalTotalResources(coalTmp.coalMembers));
+                        coalTmp.currentTaskUUID = "NONE";
+                        coalTmp.status = CS_WAITING_GOAL_POSE;
+
+                        _coalListTmp.append(coalTmp);
+
+                        newCoalID = newCoalID + 1;
                     }
+                 }
+                 else
+                 {
+                     for(int robIndx = 0; robIndx<coalList.at(coalIndx).coalMembers.size(); robIndx++)
+                     {
+                         robotsList[coalList.at(coalIndx).coalMembers.at(robIndx).robotID-1].coalID = newCoalID;
 
-                    coalProp coalTmp;
+                         coalList[coalIndx].coalMembers[robIndx].coalID = newCoalID;
 
-                    int minRobotID = 9999;
-                    for(int robIndx = 0; robIndx<coalMembersTmp.size(); robIndx++)
-                    {
-                        if (coalMembersTmp.at(robIndx).robotID < minRobotID)
-                            minRobotID = coalMembersTmp.at(robIndx).robotID;
+                     }
 
-                        coalMembersTmp[robIndx].coalID = newCoalID;
+                     coalProp coalTmp= coalProp(coalList.at(coalIndx));
+                     _coalListTmp.append(coalTmp);
 
-                        robotsList[coalMembersTmp.at(robIndx).robotID-1].coalID = newCoalID;
-                    }
-
-                    coalTmp.coalLeaderID = minRobotID;
-                    coalTmp.coalMembers  = QVector <robotProp>(coalMembersTmp);
-                    coalTmp.coalTotalResources = QVector <double>(calcCoalTotalResources(coalTmp.coalMembers));
-                    coalTmp.currentTaskUUID = "NONE";
-                    coalTmp.status = CS_WAITING_GOAL_POSE;
-
-                    _coalListTmp.append(coalTmp);
-
-                    newCoalID = newCoalID + 1;
-                }
+                     newCoalID = newCoalID + 1;
+                 }
             }
 
 
@@ -511,7 +567,7 @@ void RosThread::manageCoalitions()
 
                 qDebug()<<"---- coalID ----" << coalIndx;
                 for(int robIndx = 0; robIndx<coalList.at(coalIndx).coalMembers.size(); robIndx++)
-                    qDebug()<<"robot "<<coalList.at(coalIndx).coalMembers.at(robIndx).robotID;
+                    qDebug()<<"robot "<<coalList.at(coalIndx).coalMembers.at(robIndx).robotID<<"coalID:"<<robotsList.at(coalList.at(coalIndx).coalMembers.at(robIndx).robotID-1).coalID;
 
             }
             qDebug()<<"end of coals";
@@ -543,6 +599,17 @@ void RosThread::manageCoalitions()
             _coalList.clear();
             _waitingTasks.clear();
 
+            qDebug()<<"------------------------------------------";
+            qDebug()<<"list of coalitions after manageCoalitions";
+            for(int coalIndx = 0; coalIndx < coalList.size(); coalIndx++)
+            {
+                qDebug()<<"coalID: "<<coalIndx << "coal size: "<<coalList.at(coalIndx).coalMembers.size() <<" coal status: "<<coalList.at(coalIndx).status <<"leader robotID"<<coalList.at(coalIndx).coalLeaderID << " assigned taskUUID: " <<coalList.at(coalIndx).currentTaskUUID;
+                qDebug()<<"Members of coalition "<<coalIndx;
+                for(int robIndx = 0; robIndx<coalList.at(coalIndx).coalMembers.size(); robIndx++)
+                    qDebug()<<"robot "<<coalList.at(coalIndx).coalMembers.at(robIndx).robotID<<" coalID:"<<robotsList.at(coalList.at(coalIndx).coalMembers.at(robIndx).robotID-1).coalID;
+            }
+            qDebug()<<"------------------------------------------";
+
         }
     }
 }
@@ -553,11 +620,17 @@ void RosThread::runCFG(QVector <int> wTaskIDList)//, QVector <int> availCoalIDLi
     int changeOK = 1;
     int totalChangeNum = 0;
 
+    int totNumOfMerging = 0;
+    int totNumOfSplitting = 0;
+    int totNumOfMain = 0;
+
     while(changeOK==1)
     {
         // ......................................//
         // apply merge operation until no change //
         // ......................................//
+
+        totNumOfMain = totNumOfMain;
 
         int changeOKM= 1;
         int changeMerge = 0;
@@ -566,6 +639,8 @@ void RosThread::runCFG(QVector <int> wTaskIDList)//, QVector <int> availCoalIDLi
 
         while(changeOKM==1)
         {
+            totNumOfMerging = totNumOfMerging + 1;
+
             int changeNum = 0;
 
             for(int wTIndx = 0; wTIndx < wTaskIDList.size(); wTIndx++)
@@ -725,6 +800,8 @@ void RosThread::runCFG(QVector <int> wTaskIDList)//, QVector <int> availCoalIDLi
 
         while(changeOKS==1)
         {
+            totNumOfSplitting = totNumOfSplitting + 1;
+
             int changeNum = 0;
 
             for(int wTIndx = 0; wTIndx < wTaskIDList.size(); wTIndx++)
@@ -803,6 +880,26 @@ void RosThread::runCFG(QVector <int> wTaskIDList)//, QVector <int> availCoalIDLi
 
     } // end of while(changeOK==1)
 
+    writeNumOfIterationsToFile(totNumOfMain, totNumOfMerging, totNumOfSplitting);
+
+}
+
+void RosThread::writeNumOfIterationsToFile(int totNumOfMain, int totNumOfMerging, int totNumOfSplitting)
+{
+    QFile iterFile;
+
+    QString fileName = QDir::homePath();
+    fileName.append("/ISL_workspace/src/numOfIterations.txt");
+    iterFile.setFileName(fileName);
+
+     if(!iterFile.exists())
+         iterFile.open(QFile::WriteOnly);
+     else
+         iterFile.open(QFile::Append);
+
+    QTextStream stream(&iterFile);
+    stream<<totNumOfMain<<" "<<totNumOfMerging<<" "<<totNumOfSplitting<<"\n";
+    iterFile.close();
 }
 
 // find an available coalition for merging with coalID
@@ -907,13 +1004,20 @@ int RosThread::mergeCoalitions(int coalID, int mCoalID)
         newLeaderID = _coalList.at(mCoalID).coalLeaderID;
     }
 
-
-
+    int newCoalID;
+    if (coalID>mCoalID)
+    {
+        newCoalID = coalID-1;
+        for(int robIndx = 0; robIndx < _coalList.at(coalID).coalMembers.size();robIndx++)
+            _coalList[coalID].coalMembers[robIndx].coalID = newCoalID;
+    }
+    else
+        newCoalID = coalID;
 
     // add robots in mCoalID to coalID
     for(int robIndx = 0; robIndx < _coalList.at(mCoalID).coalMembers.size();robIndx++)
     {
-        _coalList[mCoalID].coalMembers[robIndx].coalID = coalID;
+        _coalList[mCoalID].coalMembers[robIndx].coalID = newCoalID;
         _coalList[coalID].coalMembers.append( _coalList.at(mCoalID).coalMembers.at(robIndx) );        
     }
 
@@ -1164,12 +1268,28 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
             {
                 if (coalList.at(i).coalLeaderID == infoMsg.senderRobotID)
                 {
-                    coalList[i].status = CS_WAITING_TASK_RESPONSE_FROM_COORDINATOR;
-                    coalList[i].currentTaskUUID = QString::fromStdString(infoMsg.taskUUID);
-                    qDebug()<<"coalition leader was found.";
+                    bool coalEngaged = false;
+                    for(int i = 0; i < waitingTasks.size();i++)
+                    {
+                        if (robotsList[waitingTasks.at(i).responsibleUnit-1].coalID == robotsList[infoMsg.senderRobotID-1].coalID)
+                        {
+                            coalEngaged = true;
+                        }
+                    }
 
-                    newTask.responsibleUnit = coalList.at(i).coalLeaderID;
+                    int coalStatus = coalList.at(robotsList[infoMsg.senderRobotID-1].coalID).status;
+                    if ( (coalStatus!=CS_SUCCORING) && (coalStatus!=CS_HANDLING) && (!coalEngaged))
+                    {
+                        coalList[i].status = CS_WAITING_TASK_RESPONSE_FROM_COORDINATOR;
+                        coalList[i].currentTaskUUID = QString::fromStdString(infoMsg.taskUUID);
+                        qDebug()<<"coalition leader was found.";
 
+                        newTask.responsibleUnit = coalList.at(i).coalLeaderID;
+                    }
+                    else
+                    {
+                        qDebug()<<"the coalition of the sender robot is not available.....";
+                    }
                     break;
                 }
             }
@@ -1410,6 +1530,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
     }
     else if ( (infoMsg.infoTypeID == INFO_L2C_SPLITTING) || (infoMsg.infoTypeID == INFO_L2C_SPLITTING_AND_LEADER_CHANGED) )
     {
+
+        qDebug()<<"handleTaskInfoFromLeader-> infoTypeID="<<infoMsg.infoTypeID<<" extraMsg="<<QString::fromStdString(infoMsg.extraMsg);
         coalListHist.append(QVector <coalProp>(coalList));
 
         qDebug() << "splitting" << infoMsg.senderRobotID;
@@ -1418,12 +1540,53 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
 
         QStringList splittingRobotIDList = splittingRobotIDStr.split(",",QString::SkipEmptyParts);
 
-        int newCoalLeaderID  = -1;
+        int newCoalLeaderID  = 9999;
         if (infoMsg.infoTypeID == INFO_L2C_SPLITTING_AND_LEADER_CHANGED)
         {
             // new coalition leader ID
-            newCoalLeaderID = splittingRobotIDList.at(splittingRobotIDList.size()-1).toUInt();
-            splittingRobotIDList.removeLast();
+            //newCoalLeaderID = splittingRobotIDList.at(splittingRobotIDList.size()-1).toUInt();
+            //splittingRobotIDList.removeLast();
+            int coalIDTmp = -1;
+            for(int cid = 0; cid < coalList.size();cid++)
+                if (coalList.at(cid).coalLeaderID == infoMsg.senderRobotID)
+                {
+                    coalIDTmp = cid;
+                    break;
+                }
+                /*
+                for(int rid = 0; rid < coalList.at(cid).coalMembers.size();rid++)
+                    for(int srid = 0; srid < splittingRobotIDList.size();srid++)
+                        if (splittingRobotIDList.at(srid).toUInt() == coalList.at(cid).coalMembers.at(rid).robotID)
+                        {
+                            coalIDTmp = cid;
+                            break;
+                        }
+            */
+            if (coalIDTmp>-1)
+            {
+                for(int rid = 0; rid < coalList.at(coalIDTmp).coalMembers.size();rid++)
+                {
+                    int robID = coalList.at(coalIDTmp).coalMembers.at(rid).robotID;
+                    bool isSplittedRobot = false;
+                    for(int srid = 0; srid < splittingRobotIDList.size();srid++)
+                    {
+                        if (splittingRobotIDList.at(srid).toUInt() == robID)
+                        {
+                            isSplittedRobot = true;
+                            break;
+                        }
+                    }
+                    if ((!isSplittedRobot) && (robID<newCoalLeaderID))
+                    {
+                        newCoalLeaderID = robID;
+                    }
+                }
+            }
+            else
+                qDebug()<<"Problem in the splitting !!!!!";
+
+
+
         }
 
         qDebug()<<"Number of splitting robots"<<splittingRobotIDList.size();
@@ -1464,7 +1627,8 @@ void RosThread::handleTaskInfoFromLeader(ISLH_msgs::taskInfoFromLeaderMessage in
                         {
                             qDebug()<<"splitting part5";
                             //Assign a new coalition leader ID
-                            coalList[cid].coalLeaderID = newCoalLeaderID;                                                       
+                            coalList[cid].coalLeaderID = newCoalLeaderID;
+                            qDebug()<<"leader of coalID "<<cid<<" is "<<newCoalLeaderID;
                         }
 
                         coalList[cid].status = CS_HANDLING;
@@ -1854,9 +2018,12 @@ void RosThread::generatePoses(int coalID, int poseType)
                 coalList[coalID].coalMembers[robIndx].taskSitePose.X = robX;
                 coalList[coalID].coalMembers[robIndx].taskSitePose.Y = robY;
                 coalList[coalID].coalMembers[robIndx].inGoalPose = -1;
+                coalList[coalID].coalMembers[robIndx].inTaskSite = 0;
+
                 robotsList[robotID - 1].taskSitePose.X = robX;
                 robotsList[robotID - 1].taskSitePose.Y = robY;
                 robotsList[robotID - 1].inGoalPose = -1;
+                robotsList[robotID - 1].inTaskSite = 0;
             }
             if(done) break;
         }
